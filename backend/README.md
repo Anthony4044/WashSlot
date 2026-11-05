@@ -9,7 +9,7 @@ cd backend
 python -m venv .venv
 # Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
 pip install -r requirements-dev.txt
-cp .env.example .env        # then fill in the values (see "Neon" below)
+cp .env.example .env        # or use the ready-made .env Ammar sent you privately (see "Neon" below)
 ```
 
 ## Run
@@ -30,10 +30,18 @@ Database tests **wipe every table in TEST_DATABASE_URL**. Never point it at `mai
 
 ## Neon
 
-- **`main` branch** is the demo database → `DATABASE_URL`.
-- **Each of us has our own test database** → `TEST_DATABASE_URL`. Either a Neon branch (e.g. `test-anthony`) or a
-  separate database on the same branch (`CREATE DATABASE neondb_test_anthony;`). `neondb_test` is Ammar's.
-  Separate databases stop us from wiping each other's test data when tests run at the same time.
+- **`neondb`** is the shared real database → `DATABASE_URL`.
+- **Each of us has our own test database** → `TEST_DATABASE_URL`. They are **already created**:
+
+  | Person | `TEST_DATABASE_URL` database |
+  |---|---|
+  | Ammar | `neondb_test` |
+  | Anthony | `neondb_test_anthony` |
+  | Firas | `neondb_test_lemonada` |
+
+  Tests wipe every table in it on each run, so never point it at `neondb`, and don't use someone else's.
+  Ammar sends each person a ready-made `.env` privately; never commit it or post it publicly.
+  Need another one? `CREATE DATABASE neondb_test_<name>;` in the Neon SQL Editor.
 - Use the **direct** connection string (host without `-pooler`). Paste it as Neon gives it
   (`postgresql://...?...sslmode=require`); the app adds the psycopg driver itself.
 - Migrate a test branch by hand if needed: `alembic -x db=test upgrade head`.
