@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# JWT signing keys (never commit a private key)
+backend/keys/
+*.pem
