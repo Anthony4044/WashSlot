@@ -28,6 +28,8 @@ ruff check .    # lint (ruff check . --fix to auto-fix)
 
 Database tests **wipe every table in TEST_DATABASE_URL**. Never point it at `main`.
 
+CI runs the same two commands on every PR (see `.github/workflows/ci.yml`). Without `TEST_DATABASE_URL`, only the non-database tests run there.
+
 ## Neon
 
 - **`neondb`** is the shared real database → `DATABASE_URL`.
