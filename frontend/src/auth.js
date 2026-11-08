@@ -1,3 +1,5 @@
+/** JWT storage used by the API client (`src/api.js`) and the nav. */
+
 const TOKEN_KEY = 'washslot.token'
 
 const listeners = new Set()
