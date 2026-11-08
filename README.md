@@ -3,3 +3,10 @@ Laundromat reservation service: reserve a specific washer or dryer in advance, n
 
 - Back end: [backend/README.md](backend/README.md)
 - Front end: [frontend/README.md](frontend/README.md)
+
+## CI
+
+Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+
+- **Backend:** `ruff check .` and `pytest` (database tests skip unless `TEST_DATABASE_URL` is set)
+- **Frontend:** `npm ci` and `npm run build`

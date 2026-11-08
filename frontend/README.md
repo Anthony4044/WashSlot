@@ -57,3 +57,5 @@ try {
 ```bash
 npm run build
 ```
+
+CI runs `npm ci` and `npm run build` on every PR (see `.github/workflows/ci.yml`).
