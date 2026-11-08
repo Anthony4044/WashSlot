@@ -10,3 +10,7 @@ Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.g
 
 - **Backend:** `ruff check .` and `pytest` (database tests skip unless `TEST_DATABASE_URL` is set)
 - **Frontend:** `npm ci` and `npm run build`
+
+## Repo conventions
+
+PR template and how to protect `main`: [`.github/REPO_CONVENTIONS.md`](.github/REPO_CONVENTIONS.md). Tag PRs with `backend` / `frontend`.
