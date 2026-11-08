@@ -14,6 +14,10 @@ function Logo() {
   )
 }
 
+function navClass({ isActive }) {
+  return isActive ? 'nav-link active' : 'nav-link'
+}
+
 export function NavBar() {
   const navigate = useNavigate()
   const loggedIn = useSyncExternalStore(subscribe, isLoggedIn, () => false)
@@ -25,21 +29,28 @@ export function NavBar() {
 
   return (
     <header className="nav">
-      <NavLink to="/laundromats" className="brand">
+      <NavLink to="/laundromats" className="brand" end>
         <Logo />
-        <span>
+        <span className="brand-name">
           Wash<span>Slot</span>
         </span>
       </NavLink>
-      <nav>
-        <NavLink to="/laundromats">Laundromats</NavLink>
-        <NavLink to="/reservations">My reservations</NavLink>
+
+      <nav aria-label="Main">
+        <NavLink to="/laundromats" className={navClass}>
+          Laundromats
+        </NavLink>
+        <NavLink to="/reservations" className={navClass}>
+          My reservations
+        </NavLink>
         {loggedIn ? (
-          <button type="button" className="nav-button" onClick={logout}>
+          <button type="button" className="nav-link nav-button" onClick={logout}>
             Logout
           </button>
         ) : (
-          <NavLink to="/login">Login</NavLink>
+          <NavLink to="/login" className={navClass}>
+            Login
+          </NavLink>
         )}
       </nav>
     </header>

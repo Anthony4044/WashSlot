@@ -74,6 +74,9 @@ code {
 }
 
 .nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -102,7 +105,11 @@ code {
   letter-spacing: 0.02em;
 }
 
-.brand span span {
+.brand:hover {
+  color: #fff;
+}
+
+.brand-name span {
   color: var(--accent);
 }
 
@@ -110,10 +117,10 @@ code {
   width: 28px;
   height: 28px;
   color: #0f2420;
+  flex-shrink: 0;
 }
 
-.nav a,
-.nav-button {
+.nav-link {
   color: var(--nav-text);
   text-decoration: none;
   background: transparent;
@@ -125,11 +132,15 @@ code {
   cursor: pointer;
 }
 
-.nav a:hover,
-.nav-button:hover,
-.nav a.active {
+.nav-link:hover,
+.nav-link.active {
   background: rgba(243, 239, 230, 0.12);
   color: #fff;
+}
+
+.nav-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .app-main {

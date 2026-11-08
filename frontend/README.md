@@ -19,6 +19,16 @@ npm run dev   # http://localhost:5173
 
 Every route is stubbed. Fill in the page you own under `src/pages/`. Add new routes as one line in `src/App.jsx`.
 
+## Navigation bar
+
+`src/components/NavBar.jsx` sits on every page via `Layout`:
+
+- **Laundromats** → `/laundromats`
+- **My reservations** → `/reservations`
+- **Login** → `/login` when logged out · **Logout** clears the token and goes to `/login`
+
+Login/Logout flips from the JWT in `src/auth.js` (set by the login page later).
+
 ## API client (`src/api.js`)
 
 ```js
