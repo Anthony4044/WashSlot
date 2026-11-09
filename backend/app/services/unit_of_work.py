@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.domain.slot import MachineSlot
+from app.domain.user import User
 
 
 class SlotRepository(Protocol):
@@ -17,8 +18,17 @@ class SlotRepository(Protocol):
     def save(self, slot: MachineSlot) -> None: ...
 
 
+class UserRepository(Protocol):
+    def get_by_email(self, email: str) -> User | None: ...
+
+    def add(self, user: User) -> User | None:
+        """Insert a new user and return it with its id, or None if the email is already taken."""
+        ...
+
+
 class UnitOfWork(Protocol):
     slots: SlotRepository
+    users: UserRepository
 
     def __enter__(self) -> "UnitOfWork": ...
     def __exit__(self, exc_type, exc, tb) -> None: ...
