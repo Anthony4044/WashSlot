@@ -5,6 +5,9 @@
 - database / API tests: against TEST_DATABASE_URL (`db_engine`, `uow_factory`, `client`)
 - conformance tests:   the running API checked against contract/openapi.yaml (tests/conformance/)
 
+Auth: `client` and `api_client` sign tokens with a throwaway key pair (no key files needed) and
+hash passwords with cheap bcrypt. To call a protected endpoint: `client.get(url, headers=bearer(user_id))`.
+
 Database tests are skipped if TEST_DATABASE_URL is not set.
 - Once per test run: every table is dropped and rebuilt with the real Alembic migrations.
 - Before each test: every table is emptied (TRUNCATE), so each test starts clean.
@@ -21,16 +24,24 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_uow_factory
+from app.api.deps import get_access_tokens, get_password_hasher, get_uow_factory
 from app.core.config import get_settings, to_sqlalchemy_url
+from app.core.passwords import PasswordHasher
+from app.core.tokens import AccessTokens, load_private_key, load_public_key
 from app.data.database import make_engine, make_session_factory
 from app.data.memory import MemoryUnitOfWork
 from app.data.tables import Base
 from app.data.unit_of_work import SqlAlchemyUnitOfWork
+from app.domain.enums import UserRole
+from app.domain.user import SCOPES_BY_ROLE
 from app.main import app
+from app.services.ids import USER, format_id
 from app.services.unit_of_work import UnitOfWorkFactory
+from scripts.generate_keys import generate_key_pair
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+TEST_ISSUER = "https://auth.washslot.test"
+TEST_AUDIENCE = "https://api.washslot.test"
 
 
 @pytest.fixture(scope="session")
@@ -83,8 +94,45 @@ def memory_uow() -> MemoryUnitOfWork:
     return MemoryUnitOfWork()
 
 
+@pytest.fixture(scope="session")
+def rsa_key_pair() -> tuple[bytes, bytes]:
+    """(private PEM, public PEM), made once per test run."""
+    return generate_key_pair(2048)
+
+
+@pytest.fixture(scope="session")
+def access_tokens(rsa_key_pair) -> AccessTokens:
+    private_pem, public_pem = rsa_key_pair
+    return AccessTokens(public_key=load_public_key(public_pem), private_key=load_private_key(private_pem),
+                        issuer=TEST_ISSUER, audience=TEST_AUDIENCE, expires_minutes=60)
+
+
+@pytest.fixture(scope="session")
+def password_hasher() -> PasswordHasher:
+    return PasswordHasher(rounds=4)  # the minimum cost: real bcrypt, a fraction of the time
+
+
 @pytest.fixture
-def client(uow_factory: UnitOfWorkFactory) -> Iterator[TestClient]:
+def bearer(access_tokens):
+    """Authorization header for a user id: bearer(7), or bearer(7, scopes=("reservations:read",))."""
+
+    def make(user_id: int, scopes: tuple[str, ...] = SCOPES_BY_ROLE[UserRole.CUSTOMER]) -> dict[str, str]:
+        return {"Authorization": f"Bearer {access_tokens.issue(format_id(USER, user_id), scopes)}"}
+
+    return make
+
+
+@pytest.fixture
+def auth_overrides(access_tokens, password_hasher) -> Iterator[None]:
+    app.dependency_overrides[get_access_tokens] = lambda: access_tokens
+    app.dependency_overrides[get_password_hasher] = lambda: password_hasher
+    yield
+    app.dependency_overrides.pop(get_access_tokens, None)
+    app.dependency_overrides.pop(get_password_hasher, None)
+
+
+@pytest.fixture
+def client(uow_factory: UnitOfWorkFactory, auth_overrides) -> Iterator[TestClient]:
     """API client wired to the test database. Each use case gets its own unit of work."""
     app.dependency_overrides[get_uow_factory] = lambda: uow_factory
     with TestClient(app) as c:
@@ -93,7 +141,7 @@ def client(uow_factory: UnitOfWorkFactory) -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def api_client() -> Iterator[TestClient]:
+def api_client(auth_overrides) -> Iterator[TestClient]:
     """API client for tests that don't touch the database."""
     with TestClient(app) as c:
         yield c
