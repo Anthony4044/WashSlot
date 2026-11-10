@@ -21,6 +21,7 @@ const ERROR_MESSAGES = {
   missing_token: 'You need to log in first.',
   invalid_token: 'Your session is no longer valid. Please log in again.',
   insufficient_scope: 'You do not have permission to do that.',
+  invalid_credentials: 'Wrong email or password.',
   slot_unavailable: 'Someone just took this slot.',
   hold_expired: 'This hold has expired.',
   too_late_to_cancel: 'It is too late to cancel this reservation.',
@@ -62,7 +63,9 @@ function redirectToLogin() {
   if (path === '/login' || path === '/register') {
     return
   }
-  window.location.assign('/login')
+  // Come back to this page after logging in (the login page checks it is one of ours).
+  const next = encodeURIComponent(path + window.location.search)
+  window.location.assign(`/login?next=${next}`)
 }
 
 /**

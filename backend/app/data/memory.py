@@ -4,9 +4,11 @@ They copy on get and on save, exactly like the database does: a change you don't
 That keeps tests honest - a test that forgets to save fails here too, not only against Postgres.
 """
 import copy
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from app.domain.slot import MachineSlot
+from app.domain.user import User
 
 
 class MemorySlotRepository:
@@ -41,11 +43,30 @@ class MemorySlotRepository:
         self._slots[slot.id] = copy.deepcopy(slot)
 
 
+class MemoryUserRepository:
+    def __init__(self):
+        self._users: dict[int, User] = {}
+        self._next_id = 1
+
+    def get_by_email(self, email: str) -> User | None:
+        found = next((u for u in self._users.values() if u.email == email), None)
+        return replace(found) if found else None
+
+    def add(self, user: User) -> User | None:
+        if any(u.email == user.email for u in self._users.values()):
+            return None  # the unique email constraint
+        saved = replace(user, id=self._next_id)
+        self._next_id += 1
+        self._users[saved.id] = replace(saved)
+        return saved
+
+
 class MemoryUnitOfWork:
     """Same interface as SqlAlchemyUnitOfWork. Shares one store across units of work."""
 
-    def __init__(self, slots: MemorySlotRepository | None = None):
+    def __init__(self, slots: MemorySlotRepository | None = None, users: MemoryUserRepository | None = None):
         self.slots = slots or MemorySlotRepository()
+        self.users = users or MemoryUserRepository()
         self.committed = False
 
     def __call__(self) -> "MemoryUnitOfWork":  # lets the instance act as its own factory

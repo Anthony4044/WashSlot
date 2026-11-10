@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_error_handlers
+from app.api.routes import auth
 from app.core.config import get_settings
 
 
@@ -29,6 +30,7 @@ def create_app() -> FastAPI:
     # Routers: add one line per area, e.g.
     # from app.api.routes import auth
     # app.include_router(auth.router)
+    app.include_router(auth.router)
 
     return app
 

@@ -10,14 +10,24 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
 pip install -r requirements-dev.txt
 cp .env.example .env        # or use the ready-made .env Ammar sent you privately (see "Neon" below)
+python scripts/generate_keys.py   # RSA key pair for login tokens, in backend/keys/ (git-ignored)
 ```
 
 ## Run
 
 ```bash
 alembic upgrade head          # build/update the tables in DATABASE_URL
+python scripts/seed_users.py  # demo accounts below (safe to run again; --test seeds TEST_DATABASE_URL)
 uvicorn app.main:app --reload # http://localhost:8000/docs
 ```
+
+Demo accounts (`scripts/seed_users.py`, the only way to create an operator):
+
+| Email | Password | Role |
+|---|---|---|
+| `alice@example.com` | `customer123` | CUSTOMER |
+| `bob@example.com` | `customer123` | CUSTOMER |
+| `operator@example.com` | `operator123` | OPERATOR |
 
 ## Test
 
