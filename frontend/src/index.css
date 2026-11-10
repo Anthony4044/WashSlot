@@ -279,3 +279,44 @@ code {
     margin-top: 1.2rem;
   }
 }
+
+/* Hold review (US-4.2) */
+
+.details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.4rem 1rem;
+  margin: 1rem 0 1.2rem;
+}
+
+.details dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.details dd {
+  margin: 0;
+}
+
+.countdown {
+  color: var(--muted);
+}
+
+.countdown-time {
+  font-family: var(--serif);
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+}
+
+.notice {
+  padding: 0.8rem 1rem;
+  background: rgba(42, 157, 143, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.notice p {
+  margin: 0 0 0.4rem;
+}
