@@ -28,6 +28,23 @@ ruff check .    # lint (ruff check . --fix to auto-fix)
 
 Database tests **wipe every table in TEST_DATABASE_URL**. Never point it at `main`.
 
+### Contract and conformance
+
+```bash
+openapi-spec-validator ../contract/openapi.yaml       # is the contract valid OpenAPI 3.1? (CI runs this)
+uvicorn app.main:app                                  # terminal 1: a running server
+CONFORMANCE_BASE_URL=http://localhost:8000 pytest tests/conformance   # terminal 2
+# PowerShell: $env:CONFORMANCE_BASE_URL="http://localhost:8000"; pytest tests/conformance
+```
+
+The conformance tests call the server over HTTP and check every response against `contract/openapi.yaml`.
+They never import `app`. Without `CONFORMANCE_BASE_URL` they are skipped. They register their own users,
+so point the server at your test database, not `neondb`.
+
+**Adding an endpoint:** first add its operation to `contract/openapi.yaml` (copy a similar one), then copy
+`tests/conformance/test_auth.py` for your endpoint: one test per response you can trigger, each ending in
+`check(...)` or `check_error(...)`. Use the `customer` fixture for a logged-in user.
+
 CI runs the same two commands on every PR (see `.github/workflows/ci.yml`). Without `TEST_DATABASE_URL`, only the non-database tests run there.
 
 ## Neon
