@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol
 
-from app.domain.slot import MachineSlot
+from app.domain.slot import MachineSlot, SlotDetails
 from app.domain.user import User
 
 
@@ -16,6 +16,10 @@ class SlotRepository(Protocol):
     def get(self, slot_id: int, *, lock: bool = False) -> MachineSlot | None: ...
     def get_for_reservation(self, reservation_id: int, *, lock: bool = False) -> MachineSlot | None: ...
     def save(self, slot: MachineSlot) -> None: ...
+
+    def details(self, slot_id: int) -> SlotDetails | None:
+        """Read-only: the slot's laundromat, machine and times, for building responses."""
+        ...
 
 
 class UserRepository(Protocol):

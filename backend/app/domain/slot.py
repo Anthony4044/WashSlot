@@ -11,7 +11,8 @@ check_in: US-7.2). Times are always timezone-aware; `now` is passed in (the data
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from app.domain.enums import ReservationStatus
+from app.domain.enums import MachineType, ReservationStatus
+from app.domain.errors import AlreadyCancelled, HoldExpired, NotFound
 
 ACTIVE_STATUSES = (ReservationStatus.HELD, ReservationStatus.CONFIRMED)
 
@@ -48,6 +49,9 @@ class MachineSlot:
     end_time: datetime
     reservations: list[Reservation] = field(default_factory=list)
 
+    def reservation(self, reservation_id: int) -> Reservation | None:
+        return next((r for r in self.reservations if r.id == reservation_id), None)
+
     def active_reservation(self, now: datetime) -> Reservation | None:
         return next((r for r in self.reservations if r.is_active(now)), None)
 
@@ -67,3 +71,36 @@ class MachineSlot:
                 r.status = ReservationStatus.EXPIRED
                 expired.append(r)
         return expired
+
+    def confirm(self, reservation_id: int, now: datetime) -> Reservation:
+        """Turn a live hold into a CONFIRMED reservation (US-4.2). `now` is the database clock.
+
+        Naturally idempotent: a reservation that was already confirmed is returned as it is.
+        The caller checks ownership first; this rule only knows about time and state.
+        """
+        r = self.reservation(reservation_id)
+        if r is None:
+            raise NotFound()
+        if r.status in (ReservationStatus.CONFIRMED, ReservationStatus.NO_SHOW):
+            return r  # confirmed earlier: same answer again
+        if r.status == ReservationStatus.CANCELLED:
+            raise AlreadyCancelled()
+        if not r.is_active(now):  # EXPIRED, or HELD at or past its expiry
+            raise HoldExpired()
+        r.status = ReservationStatus.CONFIRMED
+        r.confirmed_at = now
+        return r
+
+
+@dataclass(frozen=True)
+class SlotDetails:
+    """Where and when a slot is, for showing it to people. Read-only: no rule depends on it."""
+
+    slot_id: int
+    laundromat_id: int
+    laundromat_name: str
+    machine_id: int
+    machine_label: str
+    machine_type: MachineType
+    start_time: datetime
+    end_time: datetime

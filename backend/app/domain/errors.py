@@ -20,3 +20,11 @@ class NotFound(DomainError):
 
 class SlotUnavailable(DomainError):
     code = "slot_unavailable"
+
+
+class HoldExpired(DomainError):
+    code = "hold_expired"
+
+
+class AlreadyCancelled(DomainError):
+    code = "already_cancelled"
