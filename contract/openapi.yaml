@@ -790,3 +790,28 @@ components:
           description: >
             A stable, machine-readable code from x-error-catalog, never prose. Unknown codes must be
             treated as not retryable.
+
+# Every error code the API can return: its HTTP status and whether the same request may be retried.
+# Same list as CATALOG in backend/app/api/errors.py (backend/tests/test_contract.py fails if they differ).
+# Adding a code: add it to CATALOG, then here, then use it. Codes are never renamed or removed in v1.
+x-error-catalog:
+  # the request is wrong: fix it, do not retry it as is
+  - {code: invalid_request, status: 422, retryable: false}
+  - {code: idempotency_key_required, status: 422, retryable: false}
+  - {code: idempotency_key_reuse, status: 422, retryable: false}
+  - {code: not_found, status: 404, retryable: false}
+  - {code: method_not_allowed, status: 405, retryable: false}
+  # authentication (401: who are you?) and authorization (403: you may not)
+  - {code: missing_token, status: 401, retryable: false}
+  - {code: invalid_token, status: 401, retryable: false}
+  - {code: insufficient_scope, status: 403, retryable: false}
+  - {code: invalid_credentials, status: 401, retryable: false}
+  # the state does not allow it
+  - {code: slot_unavailable, status: 409, retryable: false}
+  - {code: hold_expired, status: 409, retryable: false}
+  - {code: too_late_to_cancel, status: 409, retryable: false}
+  - {code: already_cancelled, status: 409, retryable: false}
+  - {code: email_taken, status: 409, retryable: false}
+  # our fault: the same request may succeed later
+  - {code: internal_error, status: 500, retryable: true}
+  - {code: service_unavailable, status: 503, retryable: true}
