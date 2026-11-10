@@ -1,7 +1,10 @@
 """Domain tests: plain objects, no database, microseconds."""
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from app.domain.enums import ReservationStatus
+from app.domain.errors import AlreadyCancelled, HoldExpired, NotFound
 from app.domain.slot import MachineSlot, Reservation
 
 NOW = datetime(2026, 11, 20, 22, 0, tzinfo=UTC)
@@ -42,3 +45,53 @@ def test_expire_stale_holds_marks_only_stale_holds():
     assert slot.expire_stale_holds(NOW) == [stale]
     assert stale.status == ReservationStatus.EXPIRED
     assert live.status == ReservationStatus.HELD
+
+
+# --- confirm (US-4.2) -----------------------------------------------------------------------
+
+def held(expires_in_min: int = 10, status: ReservationStatus = ReservationStatus.HELD) -> MachineSlot:
+    r = res(status, expires_in_min)
+    r.id = 7
+    return slot_with(r)
+
+
+def test_confirm_a_live_hold():
+    slot = held()
+    r = slot.confirm(7, NOW)
+    assert r.status == ReservationStatus.CONFIRMED and r.confirmed_at == NOW
+    assert slot.reservations[0] is r
+    assert not slot.is_available(NOW + timedelta(hours=1))  # a confirmed reservation never lapses
+
+
+def test_confirm_twice_returns_the_same_reservation_unchanged():
+    slot = held()
+    first = slot.confirm(7, NOW)
+    again = slot.confirm(7, NOW + timedelta(minutes=30))  # even after the hold time is long gone
+    assert again is first and again.confirmed_at == NOW
+
+
+def test_confirm_a_no_show_is_still_the_same_answer():
+    assert held(status=ReservationStatus.NO_SHOW).confirm(7, NOW).status == ReservationStatus.NO_SHOW
+
+
+@pytest.mark.parametrize("expires_in_min", [0, -1])
+def test_confirm_at_or_after_expiry_is_hold_expired(expires_in_min):
+    slot = held(expires_in_min)
+    with pytest.raises(HoldExpired):
+        slot.confirm(7, NOW)
+    assert slot.reservations[0].status == ReservationStatus.HELD  # refused, nothing changed
+
+
+def test_confirm_an_expired_hold_is_hold_expired():
+    with pytest.raises(HoldExpired):
+        held(status=ReservationStatus.EXPIRED).confirm(7, NOW)
+
+
+def test_confirm_a_cancelled_reservation_is_already_cancelled():
+    with pytest.raises(AlreadyCancelled):
+        held(status=ReservationStatus.CANCELLED).confirm(7, NOW)
+
+
+def test_confirm_an_unknown_reservation_is_not_found():
+    with pytest.raises(NotFound):
+        held().confirm(8, NOW)
