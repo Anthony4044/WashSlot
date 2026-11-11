@@ -1,0 +1,817 @@
+# WashSlot API contract. Written by hand, BEFORE the code (contract-first, docs/CODING_GUIDE.md section 1).
+# This file is the source of truth: FastAPI's generated /openapi.json must conform to it, not the reverse.
+# Every story that adds or changes an endpoint edits this file first, then adds conformance tests
+# in backend/tests/conformance/.
+openapi: 3.1.0
+
+info:
+  title: WashSlot
+  version: 1.0.0
+  description: >
+    Reserve a specific washer or dryer at a laundromat in advance. Customers browse free slots,
+    hold one for 10 minutes, and confirm it. One machine slot can only ever go to one customer.
+
+
+    Conventions: JSON is camelCase. Ids are a prefix plus an opaque number (lm_3, mch_12, slot_1842,
+    hold_7251, res_7251, usr_9) and promise nothing but uniqueness; a malformed or wrong-prefix id is
+    404 not_found. Lists are wrapped in an object. Times are RFC 3339 with an offset.
+
+
+    Errors: every error body is {"error": "<code>"}. 4xx means fix the request and do not retry it as
+    it is; 5xx means the service failed and the same request may be retried. The full list of codes,
+    with their status and whether they are retryable, is in x-error-catalog at the end of this
+    document. Clients MUST treat a code they do not recognize as not retryable, which is what lets
+    the catalog grow without breaking them.
+
+
+    Evolution policy: request bodies are strict (an unknown field is 422 invalid_request), and so are
+    response schemas (additionalProperties: false). Within v1 we only make additive changes: new
+    operations, new optional request fields, new error codes. Removing, renaming or retyping
+    anything, or making something required, is breaking and gets a /v2 path and a deprecation
+    window. Every published version's conformance suite keeps running in CI.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+tags:
+  - name: auth
+    description: Accounts and access tokens.
+  - name: browse
+    description: Laundromats and free slots. Public, no token needed.
+  - name: holds
+    description: Hold a slot for 10 minutes, then confirm it.
+  - name: reservations
+    description: The caller's own reservations.
+
+paths:
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Create a customer account
+      description: >
+        Creates a CUSTOMER account. There is no way to create an operator here: a "role" field is an
+        unknown field and is rejected. Not idempotent: repeating it with the same email is
+        409 email_taken. A timed-out caller should log in with the same credentials; if that works,
+        the account was created.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: The account was created. Log in to get a token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "409":
+          description: email_taken. An account with this email (in any letter case) already exists. Not retryable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Exchange email and password for an access token
+      description: >
+        Returns a JWT signed with RS256. Its scopes depend on the role: customers get
+        "reservations:read reservations:write", operators also get "operator:manage".
+        Safe to retry: each call issues a fresh token and changes nothing else.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: The access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Token"
+        "401":
+          description: >
+            invalid_credentials. The email or the password is wrong; the response never says which.
+            Not retryable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /laundromats:
+    get:
+      operationId: listLaundromats
+      tags: [browse]
+      summary: List laundromats
+      description: >
+        Returns every laundromat, by name. Safe: it changes nothing, so it may be retried or cached
+        freely. Public: no token needed.
+      security: []
+      responses:
+        "200":
+          description: The laundromats.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [laundromats]
+                additionalProperties: false
+                properties:
+                  laundromats:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Laundromat"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /laundromats/{laundromatId}/slots:
+    get:
+      operationId: listSlots
+      tags: [browse]
+      summary: Free and taken slots of one laundromat on one day
+      description: >
+        Returns the laundromat's reservable machines, each with its slots that start on the given
+        day (in the laundromat's own time zone), marked AVAILABLE or UNAVAILABLE. Machines the
+        operator has not made reservable are left out. A hold past its expiry no longer takes a slot,
+        even before the background job marks it EXPIRED. The status is a point-in-time observation,
+        not a promise: an AVAILABLE slot can be taken a moment later, and holding it may then
+        give 409 slot_unavailable. Safe; public, no token needed.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/LaundromatIdPath"
+        - name: date
+          in: query
+          required: true
+          description: The day to show, YYYY-MM-DD, in the laundromat's time zone.
+          schema:
+            type: string
+            format: date
+            pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+      responses:
+        "200":
+          description: The reservable machines and their slots on that day.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [machines]
+                additionalProperties: false
+                properties:
+                  machines:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MachineSlots"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /slots/{slotId}/holds:
+    post:
+      operationId: placeHold
+      tags: [holds]
+      summary: Hold a slot for 10 minutes
+      description: >
+        Holds the slot for the caller until expiresAt (10 minutes). If two customers try at the same
+        time, exactly one gets 201 and the other gets 409 slot_unavailable. NOT safe and not naturally
+        idempotent, which is why the Idempotency-Key header is required: a repeated request with the
+        same key and the same body is answered with the stored outcome of the first attempt (201,
+        404 or 409, same body, with the header Idempotency-Replayed: true) and the hold is placed at
+        most once. Keys are kept for at least 24 hours. A timed-out caller MUST retry with the SAME
+        key; a fresh key is a new attempt.
+      security:
+        - bearerAuth: ["reservations:write"]
+      parameters:
+        - $ref: "#/components/parameters/SlotIdPath"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HoldRequest"
+      responses:
+        "201":
+          description: The slot is held for the caller until expiresAt.
+          headers:
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Hold"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            slot_unavailable. Someone else holds or has reserved this slot. Not retryable: pick
+            another slot.
+          headers:
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            invalid_request (bad body), idempotency_key_required (header missing or not 8 to 128
+            characters), or idempotency_key_reuse (the same key with a different body: a client bug,
+            do not retry, investigate). Not retryable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /holds/{holdId}:
+    get:
+      operationId: getHold
+      tags: [holds]
+      summary: Fetch one of my holds
+      description: >
+        Returns the caller's hold, whatever its status now (HELD, CONFIRMED, EXPIRED, ...). Another
+        customer's hold is 404 not_found, so the response never reveals that it exists. expiresAt is
+        for display; the server's clock decides expiry. Safe.
+      security:
+        - bearerAuth: ["reservations:read"]
+      parameters:
+        - $ref: "#/components/parameters/HoldIdPath"
+      responses:
+        "200":
+          description: The hold.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Hold"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /holds/{holdId}/confirm:
+    post:
+      operationId: confirmHold
+      tags: [holds]
+      summary: Confirm my hold before it expires
+      description: >
+        Turns the caller's live hold into a CONFIRMED reservation. The server's clock decides
+        whether the hold is still live. Naturally idempotent, so no Idempotency-Key is needed:
+        confirming a hold that is already confirmed returns 200 with the same reservation. A
+        timed-out caller simply retries. No request body.
+      security:
+        - bearerAuth: ["reservations:write"]
+      parameters:
+        - $ref: "#/components/parameters/HoldIdPath"
+      responses:
+        "200":
+          description: The confirmed reservation (the same one on every repeat).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            hold_expired (the 10 minutes ran out; hold the slot again if it is still free) or
+            already_cancelled (the reservation was cancelled). Not retryable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /me/reservations:
+    get:
+      operationId: listMyReservations
+      tags: [reservations]
+      summary: List my reservations
+      description: >
+        The caller's reservations, newest first. The caller comes from the token; there is no way to
+        ask for someone else's. Safe.
+      security:
+        - bearerAuth: ["reservations:read"]
+      responses:
+        "200":
+          description: The caller's reservations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reservations]
+                additionalProperties: false
+                properties:
+                  reservations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Reservation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /reservations/{reservationId}:
+    get:
+      operationId: getReservation
+      tags: [reservations]
+      summary: Fetch one of my reservations
+      description: >
+        Another customer's reservation is 404 not_found, so the response never reveals that it
+        exists. Safe.
+      security:
+        - bearerAuth: ["reservations:read"]
+      parameters:
+        - $ref: "#/components/parameters/ReservationIdPath"
+      responses:
+        "200":
+          description: The reservation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/ServerError"
+    delete:
+      operationId: cancelReservation
+      tags: [reservations]
+      summary: Cancel one of my reservations
+      description: >
+        Cancels the reservation so someone else can take the slot. Allowed only before the slot
+        starts. Idempotent: cancelling an already cancelled reservation is 204 again, so a
+        timed-out caller simply retries.
+      security:
+        - bearerAuth: ["reservations:write"]
+      parameters:
+        - $ref: "#/components/parameters/ReservationIdPath"
+      responses:
+        "204":
+          description: The reservation is cancelled (now, or by an earlier call).
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: too_late_to_cancel. The slot has already started. Not retryable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /reservations/{reservationId}/check-in:
+    post:
+      operationId: checkIn
+      tags: [reservations]
+      summary: Check in for a reservation
+      description: >
+        Marks the customer as present: by the customer ("I'm here") or by the operator of that
+        laundromat ("Mark present"). Anyone else gets 404 not_found. A reservation not checked in
+        15 minutes after its start becomes NO_SHOW and the machine goes to walk-ins. Naturally
+        idempotent: checking in again returns the same reservation. No request body.
+      security:
+        - bearerAuth: ["reservations:write"]
+      parameters:
+        - $ref: "#/components/parameters/ReservationIdPath"
+      responses:
+        "200":
+          description: The reservation, with checkedInAt set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: already_cancelled. A cancelled reservation cannot be checked in. Not retryable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Access token from POST /auth/login, sent as "Authorization: Bearer <token>". Signed with
+        RS256; the server checks the signature, iss, aud and exp. The token's space-separated
+        "scope" claim holds the caller's permissions: reservations:read, reservations:write and,
+        for operators, operator:manage. The scopes listed on an operation are the ones it needs.
+        No token or a bad token is 401; a valid token without the scope is 403.
+
+  parameters:
+    LaundromatIdPath:
+      name: laundromatId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/LaundromatId"
+    SlotIdPath:
+      name: slotId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/SlotId"
+    HoldIdPath:
+      name: holdId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/HoldId"
+    ReservationIdPath:
+      name: reservationId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/ReservationId"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >
+        A unique client-made token naming this attempt (a UUID is fine). "The same attempt" means
+        the same caller, the same operation, this key and the same body.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+
+  headers:
+    IdempotencyReplayed:
+      description: >
+        "true" when this response is the stored outcome of an earlier request with the same key. A
+        diagnostic only: clients must behave the same with or without it.
+      schema:
+        type: string
+        enum: ["true"]
+
+  responses:
+    InvalidRequest:
+      description: invalid_request. The body, a parameter or the query string is malformed. Not retryable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: >
+        missing_token (no Authorization header) or invalid_token (bad signature, expired, wrong
+        issuer or audience). Get a new token from POST /auth/login. Not retryable as is.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: insufficient_scope. The token is valid but lacks the scope this operation needs. Not retryable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: >
+        not_found. Nothing with this id exists, the id is malformed, or it belongs to someone else.
+        Not retryable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ServerError:
+      description: >
+        internal_error (500) or service_unavailable (503). Our fault: the same request may succeed
+        later. Retry with backoff (and with the same Idempotency-Key where the operation takes one).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    # ---- identifiers: prefix + opaque number ----
+    LaundromatId:
+      type: string
+      pattern: "^lm_[1-9][0-9]*$"
+      examples: [lm_3]
+    MachineId:
+      type: string
+      pattern: "^mch_[1-9][0-9]*$"
+      examples: [mch_12]
+    SlotId:
+      type: string
+      pattern: "^slot_[1-9][0-9]*$"
+      examples: [slot_1842]
+    HoldId:
+      type: string
+      pattern: "^hold_[1-9][0-9]*$"
+      examples: [hold_7251]
+    ReservationId:
+      type: string
+      pattern: "^res_[1-9][0-9]*$"
+      description: A hold and the reservation it becomes share their number (hold_7251 becomes res_7251).
+      examples: [res_7251]
+    UserId:
+      type: string
+      pattern: "^usr_[1-9][0-9]*$"
+      examples: [usr_9]
+
+    # ---- shared values ----
+    Email:
+      type: string
+      format: email
+      minLength: 3
+      maxLength: 320
+    Timestamp:
+      type: string
+      format: date-time
+      description: RFC 3339 with an offset, e.g. 2026-11-20T18:00:00-05:00.
+    MachineType:
+      type: string
+      enum: [WASHER, DRYER]
+    ReservationStatus:
+      type: string
+      enum: [HELD, CONFIRMED, EXPIRED, CANCELLED, NO_SHOW]
+      description: >
+        HELD: held for 10 minutes, waiting for confirmation. CONFIRMED: reserved. EXPIRED: the hold
+        was not confirmed in time. CANCELLED: cancelled by the customer. NO_SHOW: not checked in
+        15 minutes after the start.
+
+    # ---- auth ----
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email:
+          $ref: "#/components/schemas/Email"
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          description: At least 8 characters and at most 72 bytes in UTF-8 (the bcrypt limit).
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          minLength: 1
+          maxLength: 320
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    User:
+      type: object
+      required: [userId, email, role]
+      additionalProperties: false
+      properties:
+        userId:
+          $ref: "#/components/schemas/UserId"
+        email:
+          $ref: "#/components/schemas/Email"
+        role:
+          type: string
+          enum: [CUSTOMER, OPERATOR]
+    Token:
+      type: object
+      required: [accessToken, tokenType, expiresIn, scope]
+      additionalProperties: false
+      properties:
+        accessToken:
+          type: string
+          minLength: 1
+          description: 'The JWT. Send it as "Authorization: Bearer <accessToken>".'
+        tokenType:
+          const: Bearer
+        expiresIn:
+          type: integer
+          minimum: 1
+          description: Seconds until the token expires.
+        scope:
+          type: string
+          description: The granted scopes, space-separated, e.g. "reservations:read reservations:write".
+
+    # ---- browse ----
+    Laundromat:
+      type: object
+      required: [laundromatId, name, address, timezone]
+      additionalProperties: false
+      properties:
+        laundromatId:
+          $ref: "#/components/schemas/LaundromatId"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        address:
+          type: string
+          minLength: 1
+          maxLength: 255
+        timezone:
+          type: string
+          description: IANA time zone the laundromat's day and times are shown in, e.g. America/Toronto.
+          examples: [America/Toronto]
+    MachineSlots:
+      type: object
+      required: [machineId, label, type, slots]
+      additionalProperties: false
+      properties:
+        machineId:
+          $ref: "#/components/schemas/MachineId"
+        label:
+          type: string
+          minLength: 1
+          maxLength: 50
+          examples: [Washer 4]
+        type:
+          $ref: "#/components/schemas/MachineType"
+        slots:
+          type: array
+          description: The machine's slots that start on the requested day, earliest first.
+          items:
+            $ref: "#/components/schemas/SlotAvailability"
+    SlotAvailability:
+      type: object
+      required: [slotId, startTime, endTime, status]
+      additionalProperties: false
+      properties:
+        slotId:
+          $ref: "#/components/schemas/SlotId"
+        startTime:
+          $ref: "#/components/schemas/Timestamp"
+        endTime:
+          $ref: "#/components/schemas/Timestamp"
+        status:
+          type: string
+          enum: [AVAILABLE, UNAVAILABLE]
+          description: A point-in-time observation, not a promise.
+
+    # ---- holds and reservations ----
+    HoldRequest:
+      type: object
+      required: [confirmationEmail]
+      additionalProperties: false
+      properties:
+        confirmationEmail:
+          $ref: "#/components/schemas/Email"
+    Hold:
+      type: object
+      description: A slot held for one customer. The caller is the holder; there is no user id in the body.
+      required: [holdId, slotId, status, expiresAt, confirmationEmail, laundromatId, laundromatName,
+                 machineId, machineLabel, machineType, startTime, endTime]
+      additionalProperties: false
+      properties:
+        holdId:
+          $ref: "#/components/schemas/HoldId"
+        slotId:
+          $ref: "#/components/schemas/SlotId"
+        status:
+          $ref: "#/components/schemas/ReservationStatus"
+        expiresAt:
+          $ref: "#/components/schemas/Timestamp"
+          description: When the hold lapses if not confirmed. For display; the server's clock decides.
+        confirmationEmail:
+          $ref: "#/components/schemas/Email"
+        laundromatId:
+          $ref: "#/components/schemas/LaundromatId"
+        laundromatName:
+          type: string
+          minLength: 1
+        machineId:
+          $ref: "#/components/schemas/MachineId"
+        machineLabel:
+          type: string
+          minLength: 1
+        machineType:
+          $ref: "#/components/schemas/MachineType"
+        startTime:
+          $ref: "#/components/schemas/Timestamp"
+        endTime:
+          $ref: "#/components/schemas/Timestamp"
+    Reservation:
+      type: object
+      required: [reservationId, slotId, status, confirmationEmail, laundromatId, laundromatName,
+                 machineId, machineLabel, machineType, startTime, endTime, createdAt, checkedInAt]
+      additionalProperties: false
+      properties:
+        reservationId:
+          $ref: "#/components/schemas/ReservationId"
+        slotId:
+          $ref: "#/components/schemas/SlotId"
+        status:
+          $ref: "#/components/schemas/ReservationStatus"
+        confirmationEmail:
+          $ref: "#/components/schemas/Email"
+        laundromatId:
+          $ref: "#/components/schemas/LaundromatId"
+        laundromatName:
+          type: string
+          minLength: 1
+        machineId:
+          $ref: "#/components/schemas/MachineId"
+        machineLabel:
+          type: string
+          minLength: 1
+        machineType:
+          $ref: "#/components/schemas/MachineType"
+        startTime:
+          $ref: "#/components/schemas/Timestamp"
+        endTime:
+          $ref: "#/components/schemas/Timestamp"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+        checkedInAt:
+          description: When the customer checked in, or null if they have not.
+          oneOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+
+    # ---- errors ----
+    Error:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+          pattern: "^[a-z][a-z0-9_]*$"
+          description: >
+            A stable, machine-readable code from x-error-catalog, never prose. Unknown codes must be
+            treated as not retryable.
+
+# Every error code the API can return: its HTTP status and whether the same request may be retried.
+# Same list as CATALOG in backend/app/api/errors.py (backend/tests/test_contract.py fails if they differ).
+# Adding a code: add it to CATALOG, then here, then use it. Codes are never renamed or removed in v1.
+x-error-catalog:
+  # the request is wrong: fix it, do not retry it as is
+  - {code: invalid_request, status: 422, retryable: false}
+  - {code: idempotency_key_required, status: 422, retryable: false}
+  - {code: idempotency_key_reuse, status: 422, retryable: false}
+  - {code: not_found, status: 404, retryable: false}
+  - {code: method_not_allowed, status: 405, retryable: false}
+  # authentication (401: who are you?) and authorization (403: you may not)
+  - {code: missing_token, status: 401, retryable: false}
+  - {code: invalid_token, status: 401, retryable: false}
+  - {code: insufficient_scope, status: 403, retryable: false}
+  - {code: invalid_credentials, status: 401, retryable: false}
+  # the state does not allow it
+  - {code: slot_unavailable, status: 409, retryable: false}
+  - {code: hold_expired, status: 409, retryable: false}
+  - {code: too_late_to_cancel, status: 409, retryable: false}
+  - {code: already_cancelled, status: 409, retryable: false}
+  - {code: email_taken, status: 409, retryable: false}
+  # our fault: the same request may succeed later
+  - {code: internal_error, status: 500, retryable: true}
+  - {code: service_unavailable, status: 503, retryable: true}
