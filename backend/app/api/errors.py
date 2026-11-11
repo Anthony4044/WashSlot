@@ -36,6 +36,7 @@ CATALOG: dict[str, ErrorSpec] = {
     "missing_token": ErrorSpec(401, False),
     "invalid_token": ErrorSpec(401, False),
     "insufficient_scope": ErrorSpec(403, False),
+    "invalid_credentials": ErrorSpec(401, False),  # login: wrong email or password (never says which)
     # state conflicts
     "slot_unavailable": ErrorSpec(409, False),
     "hold_expired": ErrorSpec(409, False),
