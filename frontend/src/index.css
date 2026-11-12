@@ -185,6 +185,90 @@ code {
   padding: 0.35rem 0;
 }
 
+/* Forms (login, register) */
+
+.form-page {
+  max-width: 440px;
+  margin: 0 auto;
+  border-style: solid;
+}
+
+.form {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.2rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.field label {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.field input {
+  font: inherit;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+}
+
+.field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.field-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.form-error {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  color: #8a3a12;
+  background: rgba(196, 92, 38, 0.1);
+  border: 1px solid rgba(196, 92, 38, 0.35);
+  border-radius: 10px;
+}
+
+.button {
+  font: inherit;
+  font-weight: 700;
+  color: var(--paper);
+  background: var(--accent-ink);
+  border: 0;
+  border-radius: 999px;
+  padding: 0.65rem 1.1rem;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--nav);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.form-footer {
+  margin: 1.2rem 0 0;
+  color: var(--muted);
+}
+
 @media (max-width: 640px) {
   .nav {
     align-items: flex-start;

@@ -3,13 +3,16 @@
 One aggregate, one repository: there is no ReservationRepository. Reservations are
 loaded and saved through their slot, so every writer passes the same door - the slot row's lock.
 """
+from dataclasses import replace
 from datetime import datetime
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.data.tables import MachineSlotRow, ReservationRow
+from app.data.tables import MachineSlotRow, ReservationRow, UserRow
 from app.domain.slot import MachineSlot, Reservation
+from app.domain.user import User
 
 _RESERVATION_FIELDS = (
     "slot_id",
@@ -76,3 +79,37 @@ class SqlSlotRepository:
                 for field, value in values.items():
                     setattr(row, field, value)
         self.session.flush()
+
+
+class SqlUserRepository:
+    """Repository + Data Mapper for users (lecture Ch. 6).
+
+    The service asks for domain objects ("the user with this email") and gets a User back, never a
+    UserRow, so the layers above never learn that a database exists. All the SQL lives here. It only
+    offers the two operations its callers need: no generic get/save/delete/list.
+    """
+
+    def __init__(self, session: Session):
+        self.session = session  # shared with the unit of work, so everything commits together
+
+    def get_by_email(self, email: str) -> User | None:
+        """Expects an already-normalized (lower-case) email: the domain's normalize_email decides that."""
+        row = self.session.execute(select(UserRow).where(UserRow.email == email)).scalar_one_or_none()
+        if row is None:
+            return None
+        return User(id=row.id, email=row.email, password_hash=row.password_hash, role=row.role)  # row -> domain
+
+    def add(self, user: User) -> User | None:
+        """INSERT ... ON CONFLICT (email) DO NOTHING: of two sign-ups racing for one email,
+        exactly one gets a row and the other gets None, with no error and no check-then-insert gap.
+
+        Why not "SELECT first, INSERT if free"? That is the check-then-act race from Ch. 7: two
+        requests both SELECT, both see the email free, and both INSERT. Here the database's unique
+        constraint (uq_users_email) decides, inside the one INSERT statement, so there is no gap."""
+        new_id = self.session.execute(
+            insert(UserRow)
+            .values(email=user.email, password_hash=user.password_hash, role=user.role)
+            .on_conflict_do_nothing(index_elements=[UserRow.email])
+            .returning(UserRow.id)
+        ).scalar_one_or_none()
+        return None if new_id is None else replace(user, id=new_id)
