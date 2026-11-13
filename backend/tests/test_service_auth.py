@@ -1,4 +1,10 @@
-"""AuthService (register, login) against the in-memory unit of work. No database, no HTTP."""
+"""AuthService (register, login) against the in-memory unit of work. No database, no HTTP.
+
+This works because the service layer never touches HTTP or SQL (lecture Ch. 5): it only talks to
+a unit of work, and app/data/memory.py provides one that keeps everything in dictionaries.
+The checks here are on Outcomes ("email_taken", "invalid_credentials"), never on status codes:
+turning a code into 409 or 401 is the interface layer's job.
+"""
 import pytest
 
 from app.domain.enums import UserRole

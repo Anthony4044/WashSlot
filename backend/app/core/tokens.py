@@ -84,14 +84,19 @@ class AccessTokens:
         return jwt.encode(claims, self._private_key, algorithm=ALGORITHM)
 
     def verify(self, token: str) -> TokenClaims:
+        """Every check, on every request (lecture Ch. 8). Any failure raises InvalidToken.
+
+        Each line below is one check, and skipping it lets one attack through
+        (each attack has its own test in tests/test_security.py).
+        """
         try:
             claims = jwt.decode(
                 token,
-                self._public_key,
-                algorithms=[ALGORITHM],  # we pick the algorithm, never the token's header
-                issuer=self.issuer,
-                audience=self.audience,
-                options={"require": _REQUIRED_CLAIMS},
+                self._public_key,  # 1. signature: only our private key could have made it  -> stops Attack A
+                algorithms=[ALGORITHM],  # 2. we pick RS256, never the token's header  -> stops Attack B
+                issuer=self.issuer,  # 3. iss: it was made by our login endpoint
+                audience=self.audience,  # 4. aud: it was made for THIS API  -> stops Attack C
+                options={"require": _REQUIRED_CLAIMS},  # 5. exp must be there (PyJWT checks it is in the future)
             )
         except jwt.InvalidTokenError as exc:  # bad signature, alg, iss, aud, exp, missing claim, garbage
             raise InvalidToken() from exc
