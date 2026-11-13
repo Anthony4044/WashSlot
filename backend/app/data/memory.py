@@ -7,22 +7,28 @@ import copy
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from app.domain.slot import MachineSlot
+from app.domain.enums import MachineType
+from app.domain.slot import MachineSlot, SlotDetails
 from app.domain.user import User
 
 
 class MemorySlotRepository:
     def __init__(self, clock=lambda: datetime.now(UTC)):
         self._slots: dict[int, MachineSlot] = {}
+        self._details: dict[int, SlotDetails] = {}
         self._next_reservation_id = 1
         self._clock = clock
 
     def now(self) -> datetime:
         return self._clock()
 
-    def add(self, slot: MachineSlot) -> None:
-        """Test setup helper: put a slot in the store."""
+    def add(self, slot: MachineSlot, details: SlotDetails | None = None) -> None:
+        """Test setup helper: put a slot in the store (with made-up details unless you pass some)."""
         self._slots[slot.id] = copy.deepcopy(slot)
+        self._details[slot.id] = details or SlotDetails(
+            slot_id=slot.id, laundromat_id=1, laundromat_name="Spin City", machine_id=slot.machine_id,
+            machine_label=f"Washer {slot.machine_id}", machine_type=MachineType.WASHER,
+            start_time=slot.start_time, end_time=slot.end_time)
 
     def get(self, slot_id: int, *, lock: bool = False) -> MachineSlot | None:
         slot = self._slots.get(slot_id)
@@ -41,6 +47,9 @@ class MemorySlotRepository:
                 r.created_at = self._clock()
                 self._next_reservation_id += 1
         self._slots[slot.id] = copy.deepcopy(slot)
+
+    def details(self, slot_id: int) -> SlotDetails | None:
+        return self._details.get(slot_id)
 
 
 class MemoryUserRepository:

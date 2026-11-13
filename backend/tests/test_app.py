@@ -5,7 +5,7 @@ from app.api.errors import CATALOG, ApiError
 from app.api.responses import to_response
 from app.api.schemas.base import RequestModel, ResponseModel
 from app.core.config import BACKEND_DIR, Settings, to_sqlalchemy_url
-from app.domain.errors import DomainError, NotFound, SlotUnavailable
+from app.domain.errors import AlreadyCancelled, DomainError, HoldExpired, NotFound, SlotUnavailable
 from app.main import create_app
 from app.services.outcome import Outcome
 
@@ -61,7 +61,7 @@ def test_unmapped_code_fails_loudly_without_leaking():
 
 
 def test_every_domain_error_code_is_in_the_catalog():
-    for error in (NotFound, SlotUnavailable):
+    for error in (NotFound, SlotUnavailable, HoldExpired, AlreadyCancelled):
         assert error.code in CATALOG
 
 

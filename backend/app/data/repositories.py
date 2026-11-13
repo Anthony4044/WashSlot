@@ -10,8 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.data.tables import MachineSlotRow, ReservationRow, UserRow
-from app.domain.slot import MachineSlot, Reservation
+from app.data.tables import LaundromatRow, MachineRow, MachineSlotRow, ReservationRow, UserRow
+from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
 
 _RESERVATION_FIELDS = (
@@ -79,6 +79,21 @@ class SqlSlotRepository:
                 for field, value in values.items():
                     setattr(row, field, value)
         self.session.flush()
+
+    def details(self, slot_id: int) -> SlotDetails | None:
+        """One query joining slot -> machine -> laundromat. No lock: nothing is decided on it."""
+        row = self.session.execute(
+            select(MachineSlotRow, MachineRow, LaundromatRow)
+            .join(MachineRow, MachineRow.id == MachineSlotRow.machine_id)
+            .join(LaundromatRow, LaundromatRow.id == MachineRow.laundromat_id)
+            .where(MachineSlotRow.id == slot_id)
+        ).one_or_none()
+        if row is None:
+            return None
+        slot, machine, laundromat = row
+        return SlotDetails(slot_id=slot.id, laundromat_id=laundromat.id, laundromat_name=laundromat.name,
+                           machine_id=machine.id, machine_label=machine.label, machine_type=machine.type,
+                           start_time=slot.start_time, end_time=slot.end_time)
 
 
 class SqlUserRepository:

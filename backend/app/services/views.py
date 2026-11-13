@@ -1,0 +1,66 @@
+"""DTOs for holds and reservations, shaped like the Hold and Reservation schemas in the contract.
+
+Shared by every use case that answers with a hold or a reservation (place hold, get hold, confirm,
+my reservations, cancel, check in), so the shape is built in one place.
+"""
+from datetime import datetime
+
+from app.domain.enums import MachineType, ReservationStatus
+from app.domain.slot import Reservation, SlotDetails
+from app.services.dto import Dto
+from app.services.ids import HOLD, LAUNDROMAT, MACHINE, RESERVATION, SLOT, format_id
+
+
+class HoldDto(Dto):
+    hold_id: str
+    slot_id: str
+    status: ReservationStatus
+    expires_at: datetime
+    confirmation_email: str
+    laundromat_id: str
+    laundromat_name: str
+    machine_id: str
+    machine_label: str
+    machine_type: MachineType
+    start_time: datetime
+    end_time: datetime
+
+
+class ReservationDto(Dto):
+    reservation_id: str
+    slot_id: str
+    status: ReservationStatus
+    confirmation_email: str
+    laundromat_id: str
+    laundromat_name: str
+    machine_id: str
+    machine_label: str
+    machine_type: MachineType
+    start_time: datetime
+    end_time: datetime
+    created_at: datetime
+    checked_in_at: datetime | None
+
+
+def _where_and_when(details: SlotDetails) -> dict:
+    return {
+        "slot_id": format_id(SLOT, details.slot_id),
+        "laundromat_id": format_id(LAUNDROMAT, details.laundromat_id),
+        "laundromat_name": details.laundromat_name,
+        "machine_id": format_id(MACHINE, details.machine_id),
+        "machine_label": details.machine_label,
+        "machine_type": details.machine_type,
+        "start_time": details.start_time,
+        "end_time": details.end_time,
+    }
+
+
+def hold_dto(r: Reservation, details: SlotDetails) -> HoldDto:
+    return HoldDto(hold_id=format_id(HOLD, r.id), status=r.status, expires_at=r.expires_at,
+                   confirmation_email=r.confirmation_email, **_where_and_when(details))
+
+
+def reservation_dto(r: Reservation, details: SlotDetails) -> ReservationDto:
+    return ReservationDto(reservation_id=format_id(RESERVATION, r.id), status=r.status,
+                          confirmation_email=r.confirmation_email, created_at=r.created_at,
+                          checked_in_at=r.checked_in_at, **_where_and_when(details))
