@@ -9,10 +9,10 @@ Stories add their use-case methods here (place_hold: US-4.1, confirm: US-4.2, ca
 check_in: US-7.2). Times are always timezone-aware; `now` is passed in (the database clock).
 """
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.domain.enums import MachineType, ReservationStatus
-from app.domain.errors import AlreadyCancelled, HoldExpired, NotFound
+from app.domain.errors import AlreadyCancelled, HoldExpired, NotFound, SlotUnavailable
 
 ACTIVE_STATUSES = (ReservationStatus.HELD, ReservationStatus.CONFIRMED)
 
@@ -71,6 +71,38 @@ class MachineSlot:
                 r.status = ReservationStatus.EXPIRED
                 expired.append(r)
         return expired
+
+    def place_hold(self, user_id: int, email: str, now: datetime, minutes: int) -> Reservation:
+        """Hold this slot for one customer for `minutes` (US-4.1). Raises SlotUnavailable if it is taken.
+
+        This is the domain rule "at most one active reservation per slot", checked at the only door
+        that adds a reservation. It knows nothing about HTTP, SQL or locks (lecture Ch. 5).
+
+        On its own, this check is a read-decide-write: two requests could both see the slot free
+        and both add a hold (the check-then-act race, Ch. 7). The service prevents that by locking
+        the slot row first (SELECT ... FOR UPDATE), so only one request at a time runs this method.
+
+        `now` is the database clock, passed in by the service, so every server agrees on the time.
+        """
+        # 1. A hold whose 10 minutes ran out no longer counts: mark it EXPIRED first. This also matters
+        #    for the database's partial unique index, which still sees a stale row as HELD until we change it.
+        self.expire_stale_holds(now)
+
+        # 2. The rule: if someone holds it or has reserved it (live HELD or CONFIRMED), refuse.
+        if not self.is_available(now):
+            raise SlotUnavailable()
+
+        # 3. Add the new hold to the aggregate. The repository's save() will INSERT it.
+        hold = Reservation(
+            id=None,  # the database gives it an id when it is saved
+            slot_id=self.id,
+            user_id=user_id,
+            status=ReservationStatus.HELD,
+            confirmation_email=email,
+            expires_at=now + timedelta(minutes=minutes),  # confirm before this, or the hold lapses
+        )
+        self.reservations.append(hold)
+        return hold
 
     def confirm(self, reservation_id: int, now: datetime) -> Reservation:
         """Turn a live hold into a CONFIRMED reservation (US-4.2). `now` is the database clock.
