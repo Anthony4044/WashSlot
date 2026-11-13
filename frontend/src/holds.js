@@ -1,5 +1,20 @@
-/** Holds (US-4.2): look at my hold and confirm it. Shapes are the Hold and Reservation schemas in the contract. */
+/** Holds: place one (US-4.1), look at it and confirm it (US-4.2). Shapes are the Hold and Reservation schemas in the contract. */
 import { api } from './api.js'
+
+/**
+ * POST /slots/:slotId/holds. Resolves to the Hold; a taken slot is ApiError slot_unavailable (409).
+ *
+ * Placing a hold is NOT idempotent (each success takes a slot), so the contract requires an
+ * Idempotency-Key that names this one attempt. We make a fresh random one per click. (US-5.2 will
+ * keep the same key when the browser retries the same attempt, so a retry can't take a second slot.)
+ */
+export function placeHold(slotId, confirmationEmail) {
+  return api(`/slots/${encodeURIComponent(slotId)}/holds`, {
+    method: 'POST',
+    body: { confirmationEmail },
+    idempotencyKey: crypto.randomUUID(),
+  })
+}
 
 /** GET /holds/:holdId. Resolves to the Hold; someone else's or unknown hold is ApiError not_found. */
 export function getHold(holdId) {

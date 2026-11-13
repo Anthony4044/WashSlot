@@ -1,6 +1,6 @@
 /** Register and log in (US-2.1). The token itself is stored by `src/auth.js`. */
 import { api } from './api.js'
-import { setToken } from './auth.js'
+import { setEmail, setToken } from './auth.js'
 
 export const MIN_PASSWORD_LENGTH = 8
 const DEFAULT_AFTER_LOGIN = '/laundromats'
@@ -11,6 +11,7 @@ export async function logIn(email, password) {
     method: 'POST',
     body: { email, password },
   })
+  setEmail(email.trim()) // remembered to prefill the hold page's confirmation email
   setToken(accessToken)
 }
 
