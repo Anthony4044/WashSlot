@@ -8,19 +8,13 @@ Strict, like every request body (RequestModel sets extra="forbid", the contract 
 additionalProperties: false): an unknown field is refused instead of silently ignored.
 That is why {"email": ..., "password": ..., "role": "OPERATOR"} gets 422 and creates nothing.
 """
-from typing import Annotated
-
 from pydantic import Field, field_validator
 
-from app.api.schemas.base import RequestModel
+from app.api.schemas.base import Email, RequestModel
 from app.core.passwords import MAX_PASSWORD_BYTES
 
 MIN_PASSWORD_LENGTH = 8  # contract: RegisterRequest.password minLength: 8
-
-# Deliberately loose: one @, something on each side, a dot in the domain. The only real proof that an
-# email works is mail arriving in it. Spaces around it are allowed because we trim them anyway
-# (normalize_email in app/domain/user.py).
-Email = Annotated[str, Field(max_length=320, pattern=r"^\s*[^@\s]+@[^@\s]+\.[^@\s]+\s*$")]
+# Email (in base.py) allows spaces around the address: registration trims them in normalize_email.
 
 
 class RegisterRequest(RequestModel):
