@@ -12,7 +12,7 @@ Keep it short: no external calls (email, payments) inside it.
 """
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.data.repositories import SqlSlotRepository, SqlUserRepository
+from app.data.repositories import SqlLaundromatRepository, SqlSlotRepository, SqlUserRepository
 
 
 class SqlAlchemyUnitOfWork:
@@ -22,6 +22,7 @@ class SqlAlchemyUnitOfWork:
     def __enter__(self) -> "SqlAlchemyUnitOfWork":
         self.session = self._session_factory()
         self.slots = SqlSlotRepository(self.session)
+        self.laundromats = SqlLaundromatRepository(self.session)
         self.users = SqlUserRepository(self.session)
         return self
 

@@ -8,6 +8,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from app.domain.enums import MachineType
+from app.domain.laundromat import Laundromat
 from app.domain.slot import MachineSlot, SlotDetails
 from app.domain.user import User
 
@@ -70,12 +71,31 @@ class MemoryUserRepository:
         return saved
 
 
+class MemoryLaundromatRepository:
+    def __init__(self):
+        self._laundromats: dict[int, Laundromat] = {}
+
+    def add(self, laundromat: Laundromat) -> Laundromat:
+        """Test setup helper."""
+        self._laundromats[laundromat.id] = laundromat
+        return laundromat
+
+    def list_all(self) -> list[Laundromat]:
+        return sorted(self._laundromats.values(), key=lambda lm: (lm.name, lm.id))
+
+
 class MemoryUnitOfWork:
     """Same interface as SqlAlchemyUnitOfWork. Shares one store across units of work."""
 
-    def __init__(self, slots: MemorySlotRepository | None = None, users: MemoryUserRepository | None = None):
+    def __init__(
+        self,
+        slots: MemorySlotRepository | None = None,
+        users: MemoryUserRepository | None = None,
+        laundromats: MemoryLaundromatRepository | None = None,
+    ):
         self.slots = slots or MemorySlotRepository()
         self.users = users or MemoryUserRepository()
+        self.laundromats = laundromats or MemoryLaundromatRepository()
         self.committed = False
 
     def __call__(self) -> "MemoryUnitOfWork":  # lets the instance act as its own factory

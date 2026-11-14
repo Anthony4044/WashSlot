@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol
 
+from app.domain.laundromat import Laundromat
 from app.domain.slot import MachineSlot, SlotDetails
 from app.domain.user import User
 
@@ -22,6 +23,12 @@ class SlotRepository(Protocol):
         ...
 
 
+class LaundromatRepository(Protocol):
+    def list_all(self) -> list[Laundromat]:
+        """Every laundromat, ordered by name."""
+        ...
+
+
 class UserRepository(Protocol):
     def get_by_email(self, email: str) -> User | None: ...
 
@@ -32,6 +39,7 @@ class UserRepository(Protocol):
 
 class UnitOfWork(Protocol):
     slots: SlotRepository
+    laundromats: LaundromatRepository
     users: UserRepository
 
     def __enter__(self) -> "UnitOfWork": ...

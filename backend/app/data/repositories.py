@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.data.tables import LaundromatRow, MachineRow, MachineSlotRow, ReservationRow, UserRow
+from app.domain.laundromat import Laundromat
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
 
@@ -94,6 +95,19 @@ class SqlSlotRepository:
         return SlotDetails(slot_id=slot.id, laundromat_id=laundromat.id, laundromat_name=laundromat.name,
                            machine_id=machine.id, machine_label=machine.label, machine_type=machine.type,
                            start_time=slot.start_time, end_time=slot.end_time)
+
+
+class SqlLaundromatRepository:
+    """Browse queries over laundromats (read model; no aggregate writes)."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def list_all(self) -> list[Laundromat]:
+        rows = self.session.scalars(select(LaundromatRow).order_by(LaundromatRow.name, LaundromatRow.id)).all()
+        return [
+            Laundromat(id=row.id, name=row.name, address=row.address, timezone=row.timezone) for row in rows
+        ]
 
 
 class SqlUserRepository:
