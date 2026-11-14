@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol
 
+from app.domain.availability import SlotAvailabilityRow
 from app.domain.laundromat import Laundromat
 from app.domain.slot import MachineSlot, SlotDetails
 from app.domain.user import User
@@ -26,6 +27,17 @@ class SlotRepository(Protocol):
 class LaundromatRepository(Protocol):
     def list_all(self) -> list[Laundromat]:
         """Every laundromat, ordered by name."""
+        ...
+
+    def get(self, laundromat_id: int) -> Laundromat | None: ...
+
+    def reservable_slots_for_day(
+        self, laundromat_id: int, day_start: datetime, day_end: datetime
+    ) -> list[SlotAvailabilityRow]:
+        """One query: reservable machines and their slots starting in [day_start, day_end).
+
+        `available` matches MachineSlot.is_available against the database clock.
+        """
         ...
 
 

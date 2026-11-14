@@ -18,6 +18,24 @@ class LaundromatListDto(Dto):
     laundromats: list[LaundromatDto]
 
 
+class SlotAvailabilityDto(Dto):
+    slot_id: str
+    start_time: datetime
+    end_time: datetime
+    status: str  # AVAILABLE | UNAVAILABLE
+
+
+class MachineSlotsDto(Dto):
+    machine_id: str
+    label: str
+    type: MachineType
+    slots: list[SlotAvailabilityDto]
+
+
+class MachineSlotsListDto(Dto):
+    machines: list[MachineSlotsDto]
+
+
 class HoldDto(Dto):
     hold_id: str
     slot_id: str
