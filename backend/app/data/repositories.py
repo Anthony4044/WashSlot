@@ -98,6 +98,33 @@ class SqlSlotRepository:
                            machine_id=machine.id, machine_label=machine.label, machine_type=machine.type,
                            start_time=slot.start_time, end_time=slot.end_time)
 
+    def list_for_user(self, user_id: int) -> list[tuple[Reservation, SlotDetails]]:
+        """One query: the caller's reservations with where/when, newest id first."""
+        rows = self.session.execute(
+            select(ReservationRow, MachineSlotRow, MachineRow, LaundromatRow)
+            .join(MachineSlotRow, MachineSlotRow.id == ReservationRow.slot_id)
+            .join(MachineRow, MachineRow.id == MachineSlotRow.machine_id)
+            .join(LaundromatRow, LaundromatRow.id == MachineRow.laundromat_id)
+            .where(ReservationRow.user_id == user_id)
+            .order_by(ReservationRow.id.desc())
+        ).all()
+        return [
+            (
+                _to_domain(reservation),
+                SlotDetails(
+                    slot_id=slot.id,
+                    laundromat_id=laundromat.id,
+                    laundromat_name=laundromat.name,
+                    machine_id=machine.id,
+                    machine_label=machine.label,
+                    machine_type=machine.type,
+                    start_time=slot.start_time,
+                    end_time=slot.end_time,
+                ),
+            )
+            for reservation, slot, machine, laundromat in rows
+        ]
+
 
 class SqlLaundromatRepository:
     """Browse queries over laundromats (read model; no aggregate writes)."""

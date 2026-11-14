@@ -67,6 +67,10 @@ class ReservationDto(Dto):
     checked_in_at: datetime | None
 
 
+class ReservationListDto(Dto):
+    reservations: list[ReservationDto]
+
+
 def _where_and_when(details: SlotDetails) -> dict:
     return {
         "slot_id": format_id(SLOT, details.slot_id),
