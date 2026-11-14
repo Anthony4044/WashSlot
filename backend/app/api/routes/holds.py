@@ -1,17 +1,21 @@
-"""GET /holds/{holdId} and POST /holds/{holdId}/confirm. Thin: parse, call the service, map the Outcome.
+"""POST /slots/{slotId}/holds, GET /holds/{holdId} and POST /holds/{holdId}/confirm.
 
-US-4.1 adds POST /slots/{slotId}/holds here.
+The INTERFACE layer (lecture Ch. 5). Thin: parse, call the service, map the Outcome to HTTP.
+No rule lives here: "one active reservation per slot" is in the domain, the lock is in the service.
 """
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
 from app.api.deps import get_uow_factory
+from app.api.idempotency import IdempotencyKey
 from app.api.responses import to_response
 from app.api.schemas.errors import ErrorResponse
+from app.api.schemas.holds import HoldRequest
 from app.api.security import CurrentUser, require_scope
+from app.core.config import get_settings
 from app.services.holds import HoldService
-from app.services.ids import HOLD, parse_id
+from app.services.ids import HOLD, SLOT, parse_id
 from app.services.unit_of_work import UnitOfWorkFactory
 from app.services.views import HoldDto, ReservationDto
 
@@ -21,12 +25,37 @@ AUTH_ERRORS = {401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 404
 
 
 def get_hold_service(uow_factory: Annotated[UnitOfWorkFactory, Depends(get_uow_factory)]) -> HoldService:
-    return HoldService(uow_factory)
+    return HoldService(uow_factory, hold_minutes=get_settings().hold_minutes)  # HOLD_MINUTES, 10 by default
 
 
 Service = Annotated[HoldService, Depends(get_hold_service)]
+# Authentication + authorization as dependencies (Ch. 8): no token -> 401, token without the scope -> 403.
 Reader = Annotated[CurrentUser, Depends(require_scope("reservations:read"))]
 Writer = Annotated[CurrentUser, Depends(require_scope("reservations:write"))]
+
+
+@router.post(
+    "/slots/{slot_id}/holds",
+    operation_id="placeHold",  # the same operationId as the contract
+    status_code=201,
+    response_model=HoldDto,
+    responses={**AUTH_ERRORS, 409: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+    summary="Hold a slot for 10 minutes",
+)
+def place_hold(slot_id: str, body: HoldRequest, user: Writer, idempotency_key: IdempotencyKey, service: Service):
+    """Contract responses: 201 Hold · 401 · 403 · 404 not_found · 409 slot_unavailable · 422.
+
+    FastAPI checks things in the order of the parameters: first the token (`user`: 401/403), then the
+    Idempotency-Key header (422 idempotency_key_required), then the body (422 invalid_request).
+    Only a request that passes all three reaches the service.
+
+    Ch. 3: NOT safe and not naturally idempotent, which is why the key is required. US-4.1 only
+    requires it; US-5.2 will pass `idempotency_key` to the service to store and replay the outcome.
+    """
+    # "slot_5" -> 5. A malformed or wrong-prefix id ("abc", "lm_5") raises NotFound -> 404 not_found.
+    # The customer is `user.id`, from the verified token: never from the body.
+    outcome = service.place_hold(user.id, parse_id(SLOT, slot_id), body.confirmation_email)
+    return to_response(outcome, 201)  # Outcome -> 201 + Hold, or {"error": code} with its status
 
 
 @router.get("/holds/{hold_id}", response_model=HoldDto, responses=AUTH_ERRORS, summary="Fetch one of my holds")

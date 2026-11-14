@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.domain.enums import ReservationStatus
-from app.domain.errors import AlreadyCancelled, HoldExpired, NotFound
+from app.domain.errors import AlreadyCancelled, HoldExpired, NotFound, SlotUnavailable
 from app.domain.slot import MachineSlot, Reservation
 
 NOW = datetime(2026, 11, 20, 22, 0, tzinfo=UTC)
@@ -45,6 +45,58 @@ def test_expire_stale_holds_marks_only_stale_holds():
     assert slot.expire_stale_holds(NOW) == [stale]
     assert stale.status == ReservationStatus.EXPIRED
     assert live.status == ReservationStatus.HELD
+
+
+# --- place_hold (US-4.1) ----------------------------------------------------------------------
+# Plain objects only: the rule is tested here with no database, no HTTP and no lock. The lock that
+# stops two requests from running it at the same time is tested in tests/test_hold_race.py.
+
+KIM = 3
+
+
+def test_place_hold_on_a_free_slot():
+    slot = slot_with()
+    hold = slot.place_hold(KIM, "kim@example.com", NOW, minutes=10)
+
+    assert hold.status == ReservationStatus.HELD
+    assert hold.expires_at == NOW + timedelta(minutes=10)  # 10 minutes from the (database) clock
+    assert (hold.slot_id, hold.user_id, hold.confirmation_email) == (1, KIM, "kim@example.com")
+    assert hold.id is None  # not saved yet: the repository gives it an id
+    assert slot.reservations == [hold]  # it lives inside the aggregate
+    assert not slot.is_available(NOW)  # and now it takes the slot
+
+
+@pytest.mark.parametrize("taken_by", [ReservationStatus.HELD, ReservationStatus.CONFIRMED])
+def test_place_hold_on_a_taken_slot_is_slot_unavailable(taken_by):
+    slot = slot_with(res(taken_by))
+    with pytest.raises(SlotUnavailable):
+        slot.place_hold(KIM, "kim@example.com", NOW, minutes=10)
+    assert len(slot.reservations) == 1  # refused: nothing was added
+
+
+@pytest.mark.parametrize("expires_in_min", [0, -1])  # expired exactly now, or a minute ago
+def test_a_stale_hold_is_expired_first_and_the_slot_can_be_held(expires_in_min):
+    stale = res(ReservationStatus.HELD, expires_in_min)
+    slot = slot_with(stale)
+
+    hold = slot.place_hold(KIM, "kim@example.com", NOW, minutes=10)
+
+    assert stale.status == ReservationStatus.EXPIRED  # marked first, so it no longer counts
+    assert hold.status == ReservationStatus.HELD
+    assert [r for r in slot.reservations if r.is_active(NOW)] == [hold]  # exactly one active
+
+
+def test_expired_cancelled_and_no_show_reservations_do_not_block_a_hold():
+    ended = [res(s) for s in (ReservationStatus.EXPIRED, ReservationStatus.CANCELLED, ReservationStatus.NO_SHOW)]
+    hold = slot_with(*ended).place_hold(KIM, "kim@example.com", NOW, minutes=10)
+    assert hold.status == ReservationStatus.HELD
+
+
+def test_the_same_customer_cannot_hold_the_same_slot_twice():
+    slot = slot_with()
+    slot.place_hold(KIM, "kim@example.com", NOW, minutes=10)
+    with pytest.raises(SlotUnavailable):
+        slot.place_hold(KIM, "kim@example.com", NOW, minutes=10)
 
 
 # --- confirm (US-4.2) -----------------------------------------------------------------------

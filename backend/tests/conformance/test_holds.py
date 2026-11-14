@@ -4,11 +4,11 @@ The full flow finds a free slot and holds it through the API, so it needs browsi
 placing a hold (US-4.1) and seeded laundromats. Until those exist it is skipped, and says why.
 """
 import uuid
-from datetime import date, timedelta
 
 import pytest
 
 from tests.conformance.contract import check, check_error
+from tests.conformance.slots import find_free_slot
 from tests.conformance.users import PASSWORD, unique_email
 
 GET, CONFIRM = "/holds/{holdId}", "/holds/{holdId}/confirm"
@@ -32,21 +32,6 @@ def test_no_token_is_401(api):
 def test_bad_token_is_401(api):
     bad = {"Authorization": "Bearer not.a.jwt"}
     check_error(api.post(f"/holds/{UNKNOWN}/confirm", headers=bad), CONFIRM, "post", 401, "invalid_token")
-
-
-def find_free_slot(api) -> str:
-    listing = api.get("/laundromats")
-    if listing.status_code == 404:
-        pytest.skip("GET /laundromats is not there yet (US-3.1)")
-    for laundromat in listing.json()["laundromats"]:
-        for days in range(1, 8):
-            day = (date.today() + timedelta(days=days)).isoformat()
-            grid = api.get(f"/laundromats/{laundromat['laundromatId']}/slots", params={"date": day}).json()
-            for machine in grid["machines"]:
-                for slot in machine["slots"]:
-                    if slot["status"] == "AVAILABLE":
-                        return slot["slotId"]
-    pytest.skip("no free slot in the next 7 days: run the seed scripts")
 
 
 def place_hold(api, customer, slot_id: str) -> str:

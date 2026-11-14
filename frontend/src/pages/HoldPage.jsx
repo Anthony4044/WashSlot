@@ -1,25 +1,124 @@
-import { Link, useParams } from 'react-router-dom'
-import { PlaceholderPage } from '../components/PlaceholderPage.jsx'
+import { useState } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { ApiError } from '../api.js'
+import { getEmail, isLoggedIn } from '../auth.js'
+import { formatSlotTime, placeHold } from '../holds.js'
 
+/**
+ * /slots/:slotId/hold (US-4.1): show the slot, ask where to send the confirmation, "Hold this slot".
+ *
+ *   201 -> go to /holds/:holdId (US-4.2's page: countdown and "Confirm")
+ *   409 -> "Someone just took this slot", with a link back to pick another one
+ *
+ * The page never decides whether the slot is free: the server does, with the slot row locked
+ * (lecture Ch. 7). Two people can both see this page for the same slot; only one gets the 201.
+ *
+ * Slot details come from the availability grid (US-3.1), which links here with React Router state:
+ *   <Link to={`/slots/${slotId}/hold`}
+ *         state={{ laundromatId, laundromatName, machineLabel, machineType, startTime, endTime }}>
+ * The contract has no "get one slot" operation, so if you open this URL directly we only know the slot id.
+ */
 export function HoldPage() {
   const { slotId } = useParams()
+  const slot = useLocation().state // the grid's details, or null when the URL was typed in
+  const navigate = useNavigate()
+
+  const [email, setEmail] = useState(() => getEmail()) // prefilled with the login email
+  const [taken, setTaken] = useState(false) // true after a 409
+  const [error, setError] = useState(null) // any other error, as a readable message
+  const [busy, setBusy] = useState(false) // while the request is in flight (no double clicks)
+
+  const backLink = slot?.laundromatId ? `/laundromats/${slot.laundromatId}` : '/laundromats'
+
+  async function onSubmit(event) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const hold = await placeHold(slotId, email) // 201: the slot is ours for 10 minutes
+      navigate(`/holds/${hold.holdId}`)
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'slot_unavailable') {
+        setTaken(true) // 409: someone else holds or has reserved it
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Something went wrong.')
+      }
+      setBusy(false)
+    }
+  }
+
+  // Holding needs a token (reservations:write). Send the user to log in, then back here.
+  if (!isLoggedIn()) {
+    return (
+      <section className="page form-page">
+        <h1>Hold this slot</h1>
+        <div className="notice">
+          <p>Log in to hold a slot.</p>
+          <Link to={`/login?next=${encodeURIComponent(`/slots/${slotId}/hold`)}`}>Log in</Link>
+        </div>
+      </section>
+    )
+  }
+
+  if (taken) {
+    return (
+      <section className="page form-page">
+        <h1>Slot taken</h1>
+        <div className="notice" role="alert">
+          <p>
+            <strong>Someone just took this slot.</strong> Pick another one.
+          </p>
+          <Link to={backLink}>Back to the free slots</Link>
+        </div>
+      </section>
+    )
+  }
 
   return (
-    <PlaceholderPage
-      title="Hold this slot"
-      path="/slots/:slotId/hold"
-      story="US-4.1"
-      owner="@Anthony4044"
-      note="On 201, go to /holds/:holdId. On 409, show that someone just took the slot."
-    >
-      <p>
-        Slot: <code>{slotId}</code>
+    <section className="page form-page">
+      <p className="kicker">Hold a slot</p>
+      <h1>{slot ? `${slot.machineLabel} at ${slot.laundromatName}` : `Slot ${slotId}`}</h1>
+
+      {slot && (
+        <dl className="details">
+          <dt>When</dt>
+          <dd>{formatSlotTime(slot.startTime, slot.endTime)}</dd>
+          <dt>Machine</dt>
+          <dd>
+            {slot.machineLabel} ({slot.machineType === 'DRYER' ? 'dryer' : 'washer'})
+          </dd>
+        </dl>
+      )}
+
+      <p className="lede">We keep it for you for 10 minutes while you confirm.</p>
+
+      <form className="form" onSubmit={onSubmit}>
+        <div className="field">
+          <label htmlFor="hold-email">Send the confirmation to</label>
+          <input
+            id="hold-email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
+
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+
+        <button type="submit" className="button" disabled={busy}>
+          {busy ? 'Holding…' : 'Hold this slot'}
+        </button>
+      </form>
+
+      <p className="form-footer">
+        <Link to={backLink}>Back to the free slots</Link>
       </p>
-      <ul className="stub-links">
-        <li>
-          <Link to="/holds/hold_7251">Continue to hold_7251</Link>
-        </li>
-      </ul>
-    </PlaceholderPage>
+    </section>
   )
 }
