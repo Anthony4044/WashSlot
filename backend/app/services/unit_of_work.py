@@ -9,7 +9,7 @@ from typing import Protocol
 
 from app.domain.availability import SlotAvailabilityRow
 from app.domain.laundromat import Laundromat
-from app.domain.slot import MachineSlot, SlotDetails
+from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
 
 
@@ -21,6 +21,10 @@ class SlotRepository(Protocol):
 
     def details(self, slot_id: int) -> SlotDetails | None:
         """Read-only: the slot's laundromat, machine and times, for building responses."""
+        ...
+
+    def list_for_user(self, user_id: int) -> list[tuple[Reservation, SlotDetails]]:
+        """The caller's reservations with where/when, newest first (by id). Read model."""
         ...
 
 

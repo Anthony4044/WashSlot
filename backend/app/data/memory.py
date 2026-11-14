@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from app.domain.availability import SlotAvailabilityRow
 from app.domain.enums import MachineType
 from app.domain.laundromat import Laundromat
-from app.domain.slot import MachineSlot, SlotDetails
+from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
 
 
@@ -52,6 +52,19 @@ class MemorySlotRepository:
 
     def details(self, slot_id: int) -> SlotDetails | None:
         return self._details.get(slot_id)
+
+    def list_for_user(self, user_id: int) -> list[tuple[Reservation, SlotDetails]]:
+        """Newest first by reservation id. Pairs match SqlSlotRepository.list_for_user."""
+        pairs: list[tuple[Reservation, SlotDetails]] = []
+        for slot in self._slots.values():
+            details = self._details.get(slot.id)
+            if details is None:
+                continue
+            for r in slot.reservations:
+                if r.user_id == user_id and r.id is not None:
+                    pairs.append((copy.deepcopy(r), details))
+        pairs.sort(key=lambda item: item[0].id or 0, reverse=True)
+        return pairs
 
 
 class MemoryUserRepository:
