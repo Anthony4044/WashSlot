@@ -1,0 +1,129 @@
+# WashSlot features (Milestone 1 / Week 9)
+
+What is **on `main` today**, how to try it, and where the code lives. Owners are from [PROJECT_PLAN.md](../PROJECT_PLAN.md).
+
+**Demo accounts** (after `python scripts/seed_users.py`):
+
+| Email | Password | Role |
+|---|---|---|
+| `alice@example.com` | `customer123` | CUSTOMER |
+| `bob@example.com` | `customer123` | CUSTOMER |
+| `operator@example.com` | `operator123` | OPERATOR |
+
+**URLs:** app http://127.0.0.1:5173 · API docs http://127.0.0.1:8000/docs
+
+---
+
+## 1. Back-end foundation (US-1.1)
+
+**What:** Layered FastAPI app, Neon Postgres, Alembic migration 001 (users, laundromats, machines, slots, reservations), CORS, `{"error": code}` catalog, in-memory test doubles.
+
+| How to test | Where in code |
+|---|---|
+| `cd backend` → `alembic upgrade head` → `uvicorn app.main:app` → open `/docs` | `app/main.py`, `app/data/tables/`, `alembic/versions/` |
+| `pytest tests/test_layers.py` | import rules |
+| `pytest tests/test_app.py` | CORS / error shape |
+
+---
+
+## 2. Front-end foundation & CI (US-1.2) — @Lemonada10
+
+**What:** Vite + React Router, nav, API client, stub pages, GitHub Actions (`ruff` + `pytest` + `npm build`).
+
+| How to test | Where in code |
+|---|---|
+| `cd frontend` → `npm run dev` → click Laundromats / My reservations / Login | `frontend/src/App.jsx`, `components/NavBar.jsx` |
+| Call API via `api()` helper | `frontend/src/api.js`, `auth.js` |
+| CI on every PR | `.github/workflows/ci.yml` |
+
+---
+
+## 3. Contract + conformance (US-1.3)
+
+**What:** Hand-authored OpenAPI 3.1; live responses checked with JSON Schema.
+
+| How to test | Where in code |
+|---|---|
+| `openapi-spec-validator ../contract/openapi.yaml` | `contract/openapi.yaml` |
+| Terminal 1: `uvicorn …` · Terminal 2: `$env:CONFORMANCE_BASE_URL="http://127.0.0.1:8000"; pytest tests/conformance` | `backend/tests/conformance/` |
+
+---
+
+## 4. Register & log in (US-2.1)
+
+**What:** `POST /auth/register` (always CUSTOMER), `POST /auth/login` → RS256 JWT with scopes. UI login/register pages.
+
+| How to test (browser) | How to test (API / pytest) | Where in code |
+|---|---|---|
+| Register a new email → Login → nav shows Logout | `POST /auth/register` then `/auth/login` in `/docs` | API: `app/api/routes/auth.py`, `app/services/auth.py`, `app/core/tokens.py` |
+| Hit a protected route without token → redirected / 401 | `pytest tests/test_auth_api.py tests/test_security.py` | UI: `pages/LoginPage.jsx`, `RegisterPage.jsx` |
+| Forged / `alg=none` / wrong aud token rejected | same security tests | `app/api/security.py` |
+
+---
+
+## 5. Browse laundromats & free slots (US-3.1) — @Lemonada10
+
+**What:** Public browse. List laundromats; pick a date; see AVAILABLE / UNAVAILABLE slots; Free links into hold.
+
+| How to test (browser) | How to test (API / pytest) | Where in code |
+|---|---|---|
+| Open `/laundromats` → Spin City / Fresh Cycle | `GET /laundromats` | API: `app/api/routes/browse.py`, `app/services/browse.py` |
+| Open a laundromat → change date → Free / Taken | `GET /laundromats/{id}/slots?date=YYYY-MM-DD` | Domain pin: `app/domain/availability.py`, `MachineSlot.is_available` |
+| Seed if empty: `python scripts/seed_laundromats.py` | `pytest tests/test_browse_availability.py` | UI: `pages/LaundromatsPage.jsx`, `LaundromatSlotsPage.jsx`, `browse.js` |
+| | Conformance: `tests/conformance/test_browse.py` | Repo read model: `SqlLaundromatRepository.reservable_slots_for_day` |
+
+---
+
+## 6. Hold a slot for 10 minutes (US-4.1)
+
+**What:** Authenticated customer holds a free slot. Domain rule + row lock. Race test proves no double hold.
+
+| How to test (browser) | How to test (API / pytest) | Where in code |
+|---|---|---|
+| Log in → Free slot → confirm email → Hold | `POST /slots/{slotId}/holds` + `Idempotency-Key` + Bearer | Domain: `app/domain/slot.py` → `place_hold` |
+| Second browser as Bob on same slot → “taken” / 409 | `pytest tests/test_hold_race.py` (needs `TEST_DATABASE_URL`) | Service: `app/services/holds.py` → `place_hold` |
+| | `pytest tests/test_service_place_hold.py tests/test_place_hold_api.py` | API: `app/api/routes/holds.py` |
+| | Conformance: `tests/conformance/test_place_hold.py` | UI: `pages/HoldPage.jsx`, `holds.js` |
+
+**Demo line:** “The slot is locked with `FOR UPDATE`; 20 parallel holds → one winner.”
+
+---
+
+## 7. Confirm my hold (US-4.2)
+
+**What:** View hold + countdown; confirm before expiry → `CONFIRMED` reservation. Confirm again is naturally idempotent.
+
+| How to test (browser) | How to test (API / pytest) | Where in code |
+|---|---|---|
+| After hold → `/holds/:holdId` → Confirm → lands on reservations | `GET /holds/{holdId}` · `POST /holds/{holdId}/confirm` | Domain: `MachineSlot.confirm` |
+| Confirm twice → same `res_N` | `pytest tests/test_service_holds.py tests/test_holds_api.py` | Service: `HoldService.get_hold` / `confirm` |
+| Bob opens Alice’s hold URL → not found | Conformance: `tests/conformance/test_holds.py` | UI: `pages/HoldReviewPage.jsx` |
+
+---
+
+## 8. My reservations — only mine (US-4.3) — @Lemonada10
+
+**What:** List the caller’s bookings (newest first); fetch one by id; anyone else’s id → `404 not_found` (no leak).
+
+| How to test (browser) | How to test (API / pytest) | Where in code |
+|---|---|---|
+| As Alice: confirm a hold → **My reservations** shows it | `GET /me/reservations` | Service: `app/services/reservations.py` |
+| As Bob: same list does **not** show Alice’s booking | `GET /reservations/{id}` as other user → 404 | API: `app/api/routes/reservations.py` |
+| Logged out → prompted to log in | `pytest tests/test_service_reservations.py tests/test_reservations_api.py` | List query: `SqlSlotRepository.list_for_user` |
+| | Conformance: `tests/conformance/test_reservations.py` | UI: `pages/ReservationsPage.jsx`, `reservations.js` |
+
+---
+
+## End-to-end happy path (all features)
+
+1. Seed: `seed_users.py` + `seed_laundromats.py`
+2. Open app → Register or login as Alice  
+3. Laundromats → location → tomorrow → **Free**  
+4. Hold → Confirm  
+5. My reservations → see CONFIRMED row  
+6. Logout → login as Bob → reservations empty / Alice’s `res_…` URL → error  
+7. (Optional) Race pytest with `TEST_DATABASE_URL`
+
+## Not in Milestone 2 yet
+
+Cancel reservation, hold expiry worker, idempotency replay store, confirmation email (Resend), operator tools, check-in, health/Docker — planned in Weeks 10–12 ([PROJECT_PLAN.md](../PROJECT_PLAN.md)).

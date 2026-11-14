@@ -1,8 +1,15 @@
 # WashSlot
 Laundromat reservation service: reserve a specific washer or dryer in advance, no new machines or payment system needed. FastAPI + PostgreSQL + React.
 
+**Founders:** Anthony4044 · Lemonada10 · ammarranko · **Course:** SOEN 387 Fall 2026
+
 - Back end: [backend/README.md](backend/README.md)
 - Front end: [frontend/README.md](frontend/README.md)
+- **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Features + how to test:** [docs/FEATURES.md](docs/FEATURES.md)
+- **Milestone 2 demo script:** [docs/MILESTONE2_DEMO.md](docs/MILESTONE2_DEMO.md)
+- Coding rules: [docs/CODING_GUIDE.md](docs/CODING_GUIDE.md)
+- Plan: [PROJECT_PLAN.md](PROJECT_PLAN.md)
 
 ## How to run
 

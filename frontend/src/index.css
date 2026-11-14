@@ -491,6 +491,24 @@ code {
   background: #fff;
 }
 
+a.reservation-link {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+a.reservation-link:hover {
+  border-color: var(--accent);
+  color: inherit;
+}
+
+.reservation-action {
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--focus);
+}
+
 .reservation-where {
   font-family: var(--serif);
   font-size: 1.1rem;

@@ -5,6 +5,38 @@ import { isLoggedIn } from '../auth.js'
 import { formatSlotTime } from '../holds.js'
 import { listMyReservations } from '../reservations.js'
 
+/** hold_7 and res_7 are the same row — open the hold page for countdown + Confirm. */
+function holdPathFromReservationId(reservationId) {
+  return `/holds/${reservationId.replace(/^res_/, 'hold_')}`
+}
+
+function ReservationRow({ reservation: r }) {
+  const body = (
+    <>
+      <span className="reservation-where">
+        {r.laundromatName} · {r.machineLabel}
+      </span>
+      <span className="reservation-when">{formatSlotTime(r.startTime, r.endTime)}</span>
+      <span className={`reservation-status status-${r.status.toLowerCase()}`}>{r.status}</span>
+      {r.status === 'HELD' && (
+        <span className="reservation-action">Open to see the timer and confirm</span>
+      )}
+    </>
+  )
+
+  if (r.status === 'HELD') {
+    return (
+      <li>
+        <Link to={holdPathFromReservationId(r.reservationId)} className="reservation-item reservation-link">
+          {body}
+        </Link>
+      </li>
+    )
+  }
+
+  return <li className="reservation-item">{body}</li>
+}
+
 /** /reservations — only the caller's bookings (US-4.3). */
 export function ReservationsPage() {
   const [reservations, setReservations] = useState(null)
@@ -46,7 +78,7 @@ export function ReservationsPage() {
     <section className="page">
       <p className="kicker">Account</p>
       <h1>My reservations</h1>
-      <p className="lede">Only your bookings. Newest first.</p>
+      <p className="lede">Only your bookings. Newest first. Tap a HELD row to confirm before it expires.</p>
 
       {error && (
         <p className="form-error" role="alert">
@@ -65,13 +97,7 @@ export function ReservationsPage() {
       {reservations && reservations.length > 0 && (
         <ul className="reservation-list">
           {reservations.map((r) => (
-            <li key={r.reservationId} className="reservation-item">
-              <span className="reservation-where">
-                {r.laundromatName} · {r.machineLabel}
-              </span>
-              <span className="reservation-when">{formatSlotTime(r.startTime, r.endTime)}</span>
-              <span className={`reservation-status status-${r.status.toLowerCase()}`}>{r.status}</span>
-            </li>
+            <ReservationRow key={r.reservationId} reservation={r} />
           ))}
         </ul>
       )}
