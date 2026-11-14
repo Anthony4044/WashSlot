@@ -16,11 +16,21 @@ def make_user(db: Session, email: str = "a@example.com") -> UserRow:
     return user
 
 
-def make_slot(db: Session, start: datetime = START, label: str = "Washer 4") -> MachineSlotRow:
-    laundromat = LaundromatRow(name="Spin City", address="1 Main St")
-    db.add(laundromat)
-    db.flush()
-    machine = MachineRow(laundromat_id=laundromat.id, label=label, type=MachineType.WASHER, reservable=True)
+def make_slot(
+    db: Session,
+    start: datetime = START,
+    label: str = "Washer 4",
+    *,
+    laundromat: LaundromatRow | None = None,
+    reservable: bool = True,
+) -> MachineSlotRow:
+    if laundromat is None:
+        laundromat = LaundromatRow(name="Spin City", address="1 Main St")
+        db.add(laundromat)
+        db.flush()
+    machine = MachineRow(
+        laundromat_id=laundromat.id, label=label, type=MachineType.WASHER, reservable=reservable
+    )
     db.add(machine)
     db.flush()
     slot = MachineSlotRow(machine_id=machine.id, start_time=start, end_time=start + timedelta(hours=1))

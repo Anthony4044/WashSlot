@@ -1,14 +1,39 @@
-"""DTOs for holds and reservations, shaped like the Hold and Reservation schemas in the contract.
-
-Shared by every use case that answers with a hold or a reservation (place hold, get hold, confirm,
-my reservations, cancel, check in), so the shape is built in one place.
-"""
+"""DTOs shaped like the contract schemas. Built once and reused by the use cases that return them."""
 from datetime import datetime
 
 from app.domain.enums import MachineType, ReservationStatus
 from app.domain.slot import Reservation, SlotDetails
 from app.services.dto import Dto
 from app.services.ids import HOLD, LAUNDROMAT, MACHINE, RESERVATION, SLOT, format_id
+
+
+class LaundromatDto(Dto):
+    laundromat_id: str
+    name: str
+    address: str
+    timezone: str
+
+
+class LaundromatListDto(Dto):
+    laundromats: list[LaundromatDto]
+
+
+class SlotAvailabilityDto(Dto):
+    slot_id: str
+    start_time: datetime
+    end_time: datetime
+    status: str  # AVAILABLE | UNAVAILABLE
+
+
+class MachineSlotsDto(Dto):
+    machine_id: str
+    label: str
+    type: MachineType
+    slots: list[SlotAvailabilityDto]
+
+
+class MachineSlotsListDto(Dto):
+    machines: list[MachineSlotsDto]
 
 
 class HoldDto(Dto):

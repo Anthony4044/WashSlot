@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_error_handlers
-from app.api.routes import auth, holds
+from app.api.routes import auth, browse, holds
 from app.core.config import get_settings
 
 
@@ -31,6 +31,7 @@ def create_app() -> FastAPI:
     # from app.api.routes import auth
     # app.include_router(auth.router)
     app.include_router(auth.router)
+    app.include_router(browse.router)
     app.include_router(holds.router)
 
     return app

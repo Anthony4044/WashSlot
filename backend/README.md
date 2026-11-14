@@ -16,9 +16,10 @@ python scripts/generate_keys.py   # RSA key pair for login tokens, in backend/ke
 ## Run
 
 ```bash
-alembic upgrade head          # build/update the tables in DATABASE_URL
-python scripts/seed_users.py  # demo accounts below (safe to run again; --test seeds TEST_DATABASE_URL)
-uvicorn app.main:app --reload # http://localhost:8000/docs
+alembic upgrade head                 # build/update the tables in DATABASE_URL
+python scripts/seed_users.py         # demo accounts below (safe to run again; --test seeds TEST_DATABASE_URL)
+python scripts/seed_laundromats.py   # 2 laundromats, machines, next 7 days of slots (--test for TEST_DATABASE_URL)
+uvicorn app.main:app --reload        # http://localhost:8000/docs
 ```
 
 Demo accounts (`scripts/seed_users.py`, the only way to create an operator):

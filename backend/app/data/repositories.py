@@ -6,11 +6,14 @@ loaded and saved through their slot, so every writer passes the same door - the 
 from dataclasses import replace
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.data.tables import LaundromatRow, MachineRow, MachineSlotRow, ReservationRow, UserRow
+from app.domain.availability import SlotAvailabilityRow
+from app.domain.enums import ReservationStatus
+from app.domain.laundromat import Laundromat
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
 
@@ -94,6 +97,73 @@ class SqlSlotRepository:
         return SlotDetails(slot_id=slot.id, laundromat_id=laundromat.id, laundromat_name=laundromat.name,
                            machine_id=machine.id, machine_label=machine.label, machine_type=machine.type,
                            start_time=slot.start_time, end_time=slot.end_time)
+
+
+class SqlLaundromatRepository:
+    """Browse queries over laundromats (read model; no aggregate writes)."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def list_all(self) -> list[Laundromat]:
+        rows = self.session.scalars(select(LaundromatRow).order_by(LaundromatRow.name, LaundromatRow.id)).all()
+        return [
+            Laundromat(id=row.id, name=row.name, address=row.address, timezone=row.timezone) for row in rows
+        ]
+
+    def get(self, laundromat_id: int) -> Laundromat | None:
+        row = self.session.get(LaundromatRow, laundromat_id)
+        if row is None:
+            return None
+        return Laundromat(id=row.id, name=row.name, address=row.address, timezone=row.timezone)
+
+    def reservable_slots_for_day(
+        self, laundromat_id: int, day_start: datetime, day_end: datetime
+    ) -> list[SlotAvailabilityRow]:
+        """One SQL query, no N+1. Availability matches MachineSlot.is_available(database now)."""
+        taken = exists(
+            select(ReservationRow.id).where(
+                ReservationRow.slot_id == MachineSlotRow.id,
+                or_(
+                    ReservationRow.status == ReservationStatus.CONFIRMED,
+                    and_(
+                        ReservationRow.status == ReservationStatus.HELD,
+                        ReservationRow.expires_at > func.now(),
+                    ),
+                ),
+            )
+        )
+        rows = self.session.execute(
+            select(
+                MachineRow.id,
+                MachineRow.label,
+                MachineRow.type,
+                MachineSlotRow.id,
+                MachineSlotRow.start_time,
+                MachineSlotRow.end_time,
+                taken.label("taken"),
+            )
+            .join(MachineSlotRow, MachineSlotRow.machine_id == MachineRow.id)
+            .where(
+                MachineRow.laundromat_id == laundromat_id,
+                MachineRow.reservable.is_(True),
+                MachineSlotRow.start_time >= day_start,
+                MachineSlotRow.start_time < day_end,
+            )
+            .order_by(MachineRow.label, MachineRow.id, MachineSlotRow.start_time)
+        ).all()
+        return [
+            SlotAvailabilityRow(
+                machine_id=machine_id,
+                machine_label=label,
+                machine_type=machine_type,
+                slot_id=slot_id,
+                start_time=start_time,
+                end_time=end_time,
+                available=not taken_flag,
+            )
+            for machine_id, label, machine_type, slot_id, start_time, end_time, taken_flag in rows
+        ]
 
 
 class SqlUserRepository:

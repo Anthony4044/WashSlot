@@ -185,6 +185,157 @@ code {
   padding: 0.35rem 0;
 }
 
+/* Laundromat list (US-3.1) */
+
+.laundromat-list {
+  list-style: none;
+  margin: 1.2rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.laundromat-link {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  background: #fff;
+}
+
+.laundromat-link:hover {
+  border-color: var(--accent);
+  color: inherit;
+}
+
+.laundromat-name {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.laundromat-address {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+/* Availability grid (US-3.1) */
+
+.availability-page {
+  width: min(1100px, 100%);
+}
+
+.availability-page .kicker a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.availability-page .kicker a:hover {
+  color: var(--focus);
+}
+
+.date-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0 1.2rem;
+}
+
+.date-picker label {
+  font-weight: 600;
+}
+
+.date-picker input {
+  font: inherit;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.45rem 0.65rem;
+}
+
+.slot-grid-wrap {
+  overflow-x: auto;
+  margin-top: 0.5rem;
+}
+
+.slot-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.slot-grid th,
+.slot-grid td {
+  border: 1px solid var(--line);
+  padding: 0.45rem 0.55rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.slot-grid thead th {
+  background: rgba(20, 51, 46, 0.06);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.slot-grid tbody th {
+  text-align: left;
+  background: #fff;
+  white-space: nowrap;
+}
+
+.machine-label {
+  display: block;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.machine-type {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.slot-free a {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(42, 157, 143, 0.15);
+  color: var(--accent-ink);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.slot-free a:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.slot-taken {
+  color: var(--muted);
+  background: rgba(92, 103, 95, 0.08);
+}
+
+.slot-empty {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    rgba(215, 203, 184, 0.35) 4px,
+    rgba(215, 203, 184, 0.35) 5px
+  );
+}
+
+.app-main:has(.availability-page) {
+  width: min(1100px, calc(100% - 2rem));
+}
+
 /* Forms (login, register) */
 
 .form-page {
