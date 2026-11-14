@@ -29,9 +29,14 @@ export function HoldPage() {
   const [busy, setBusy] = useState(false) // while the request is in flight (no double clicks)
 
   const backLink = slot?.laundromatId ? `/laundromats/${slot.laundromatId}` : '/laundromats'
+  const inThePast = slot?.startTime && Date.parse(slot.startTime) <= Date.now()
 
   async function onSubmit(event) {
     event.preventDefault()
+    if (inThePast) {
+      setError('That slot is already in the past. Pick a later time.')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -39,7 +44,7 @@ export function HoldPage() {
       navigate(`/holds/${hold.holdId}`)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'slot_unavailable') {
-        setTaken(true) // 409: someone else holds or has reserved it
+        setTaken(true) // 409: past, or someone else holds / reserved it
       } else {
         setError(err instanceof ApiError ? err.message : 'Something went wrong.')
       }
@@ -66,7 +71,22 @@ export function HoldPage() {
         <h1>Slot taken</h1>
         <div className="notice" role="alert">
           <p>
-            <strong>Someone just took this slot.</strong> Pick another one.
+            <strong>That slot is not available.</strong> It may already be in the past, or someone
+            else took it. Pick another one.
+          </p>
+          <Link to={backLink}>Back to the free slots</Link>
+        </div>
+      </section>
+    )
+  }
+
+  if (inThePast) {
+    return (
+      <section className="page form-page">
+        <h1>Slot in the past</h1>
+        <div className="notice" role="alert">
+          <p>
+            <strong>You can’t reserve a time that already started.</strong> Pick a later slot.
           </p>
           <Link to={backLink}>Back to the free slots</Link>
         </div>

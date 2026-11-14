@@ -81,3 +81,35 @@ def test_get_someone_elses_is_not_found(service, uow):
 
 def test_get_unknown_is_not_found(service):
     assert service.get(ALICE, 999999).code == "not_found"
+
+
+def test_cancel_my_reservation_frees_the_slot(service, uow):
+    reservation_id = put_reservation(uow, user_id=ALICE)
+    assert service.cancel(ALICE, reservation_id).ok
+    slot = uow.slots.get(1)
+    assert slot.reservation(reservation_id).status == ReservationStatus.CANCELLED
+    assert slot.is_available(NOW)
+
+
+def test_cancel_twice_is_ok(service, uow):
+    reservation_id = put_reservation(uow, user_id=ALICE)
+    assert service.cancel(ALICE, reservation_id).ok
+    assert service.cancel(ALICE, reservation_id).ok
+
+
+def test_cancel_someone_elses_is_not_found(service, uow):
+    reservation_id = put_reservation(uow, user_id=ALICE)
+    assert service.cancel(BOB, reservation_id).code == "not_found"
+
+
+def test_cancel_after_slot_start_is_too_late():
+    clock = {"now": NOW}
+
+    def tick():
+        return clock["now"]
+
+    uow = MemoryUnitOfWork(slots=MemorySlotRepository(clock=tick))
+    service = ReservationService(uow)
+    reservation_id = put_reservation(uow, user_id=ALICE)
+    clock["now"] = NOW + timedelta(hours=1)  # == slot.start_time
+    assert service.cancel(ALICE, reservation_id).code == "too_late_to_cancel"

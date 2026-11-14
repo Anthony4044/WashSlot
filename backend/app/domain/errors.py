@@ -28,3 +28,7 @@ class HoldExpired(DomainError):
 
 class AlreadyCancelled(DomainError):
     code = "already_cancelled"
+
+
+class TooLateToCancel(DomainError):
+    code = "too_late_to_cancel"

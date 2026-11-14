@@ -3,44 +3,67 @@ import { Link } from 'react-router-dom'
 import { ApiError } from '../api.js'
 import { isLoggedIn } from '../auth.js'
 import { formatSlotTime } from '../holds.js'
-import { listMyReservations } from '../reservations.js'
+import { cancelReservation, listMyReservations } from '../reservations.js'
 
 /** hold_7 and res_7 are the same row — open the hold page for countdown + Confirm. */
 function holdPathFromReservationId(reservationId) {
   return `/holds/${reservationId.replace(/^res_/, 'hold_')}`
 }
 
-function ReservationRow({ reservation: r }) {
-  const body = (
+function canCancel(reservation, now = Date.now()) {
+  if (reservation.status !== 'CONFIRMED' && reservation.status !== 'HELD') {
+    return false
+  }
+  return Date.parse(reservation.startTime) > now
+}
+
+function ReservationRow({ reservation: r, onCancel, busyId }) {
+  const cancellable = canCancel(r)
+  const busy = busyId === r.reservationId
+
+  const details = (
     <>
       <span className="reservation-where">
         {r.laundromatName} · {r.machineLabel}
       </span>
       <span className="reservation-when">{formatSlotTime(r.startTime, r.endTime)}</span>
       <span className={`reservation-status status-${r.status.toLowerCase()}`}>{r.status}</span>
-      {r.status === 'HELD' && (
-        <span className="reservation-action">Open to see the timer and confirm</span>
-      )}
     </>
   )
 
   if (r.status === 'HELD') {
     return (
-      <li>
-        <Link to={holdPathFromReservationId(r.reservationId)} className="reservation-item reservation-link">
-          {body}
+      <li className="reservation-item reservation-item-actions">
+        <Link to={holdPathFromReservationId(r.reservationId)} className="reservation-main-link">
+          {details}
+          <span className="reservation-action">Open to see the timer and confirm</span>
         </Link>
+        {cancellable && (
+          <button type="button" className="button-secondary" disabled={busy} onClick={() => onCancel(r)}>
+            {busy ? 'Cancelling…' : 'Cancel hold'}
+          </button>
+        )}
       </li>
     )
   }
 
-  return <li className="reservation-item">{body}</li>
+  return (
+    <li className="reservation-item reservation-item-actions">
+      <div className="reservation-main">{details}</div>
+      {cancellable && (
+        <button type="button" className="button-secondary" disabled={busy} onClick={() => onCancel(r)}>
+          {busy ? 'Cancelling…' : 'Cancel'}
+        </button>
+      )}
+    </li>
+  )
 }
 
-/** /reservations — only the caller's bookings (US-4.3). */
+/** /reservations — caller's bookings (US-4.3) + cancel before slot start (US-5.3). */
 export function ReservationsPage() {
   const [reservations, setReservations] = useState(null)
   const [error, setError] = useState(null)
+  const [busyId, setBusyId] = useState(null)
 
   useEffect(() => {
     if (!isLoggedIn()) {
@@ -61,6 +84,30 @@ export function ReservationsPage() {
     }
   }, [])
 
+  async function onCancel(reservation) {
+    const when = formatSlotTime(reservation.startTime, reservation.endTime)
+    const ok = window.confirm(
+      `Cancel this booking?\n\n${reservation.laundromatName} · ${reservation.machineLabel}\n${when}\n\nYou can only cancel before the slot starts.`,
+    )
+    if (!ok) {
+      return
+    }
+    setBusyId(reservation.reservationId)
+    setError(null)
+    try {
+      await cancelReservation(reservation.reservationId)
+      setReservations((list) =>
+        list.map((item) =>
+          item.reservationId === reservation.reservationId ? { ...item, status: 'CANCELLED' } : item,
+        ),
+      )
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not cancel.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   if (!isLoggedIn()) {
     return (
       <section className="page form-page">
@@ -78,7 +125,10 @@ export function ReservationsPage() {
     <section className="page">
       <p className="kicker">Account</p>
       <h1>My reservations</h1>
-      <p className="lede">Only your bookings. Newest first. Tap a HELD row to confirm before it expires.</p>
+      <p className="lede">
+        Only your bookings. Newest first. Tap HELD to confirm. Cancel a booking any time before its
+        start.
+      </p>
 
       {error && (
         <p className="form-error" role="alert">
@@ -97,7 +147,7 @@ export function ReservationsPage() {
       {reservations && reservations.length > 0 && (
         <ul className="reservation-list">
           {reservations.map((r) => (
-            <ReservationRow key={r.reservationId} reservation={r} />
+            <ReservationRow key={r.reservationId} reservation={r} onCancel={onCancel} busyId={busyId} />
           ))}
         </ul>
       )}

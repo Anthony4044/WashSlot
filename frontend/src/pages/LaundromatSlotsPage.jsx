@@ -84,6 +84,7 @@ export function LaundromatSlotsPage() {
         <input
           id="slot-date"
           type="date"
+          min={todayDateInputValue()}
           value={date}
           onChange={(e) => setDate(e.target.value)}
         />
@@ -129,6 +130,14 @@ export function LaundromatSlotsPage() {
                       const slot = byStart.get(hour.startTime)
                       if (!slot) {
                         return <td key={hour.startTime} className="slot-empty" />
+                      }
+                      const started = Date.parse(slot.startTime) <= Date.now()
+                      if (started) {
+                        return (
+                          <td key={hour.startTime} className="slot-taken">
+                            Past
+                          </td>
+                        )
                       }
                       if (slot.status !== 'AVAILABLE') {
                         return (

@@ -12,7 +12,7 @@ from app.domain.slot import MachineSlot, Reservation
 from app.main import app
 from tests.conformance.contract import check, check_error
 
-LIST, GET = "/me/reservations", "/reservations/{reservationId}"
+LIST, GET, DELETE = "/me/reservations", "/reservations/{reservationId}", "/reservations/{reservationId}"
 ALICE, BOB = 1, 2
 
 
@@ -96,3 +96,70 @@ def test_get_needs_a_token(memory_client, memory_uow):
 @pytest.mark.parametrize("bad_id", ["res_abc", "hold_1", "res_0", "1"])
 def test_get_a_malformed_id_is_404(memory_client, bearer, bad_id):
     check_error(memory_client.get(f"/reservations/{bad_id}", headers=bearer(ALICE)), GET, "get", 404, "not_found")
+
+
+def test_cancel_my_reservation(memory_client, memory_uow, bearer):
+    reservation_id = put_reservation(memory_uow, user_id=ALICE)
+    r = memory_client.delete(f"/reservations/res_{reservation_id}", headers=bearer(ALICE))
+    assert r.status_code == 204
+    assert memory_uow.slots.get(1).reservation(reservation_id).status == ReservationStatus.CANCELLED
+    again = memory_client.delete(f"/reservations/res_{reservation_id}", headers=bearer(ALICE))
+    assert again.status_code == 204
+
+
+def test_cancel_someone_elses_is_404(memory_client, memory_uow, bearer):
+    reservation_id = put_reservation(memory_uow, user_id=ALICE)
+    check_error(
+        memory_client.delete(f"/reservations/res_{reservation_id}", headers=bearer(BOB)),
+        DELETE,
+        "delete",
+        404,
+        "not_found",
+    )
+
+
+def test_cancel_needs_write_scope(memory_client, memory_uow, bearer):
+    reservation_id = put_reservation(memory_uow, user_id=ALICE)
+    check_error(
+        memory_client.delete(f"/reservations/res_{reservation_id}", headers=bearer(ALICE, scopes=("reservations:read",))),
+        DELETE,
+        "delete",
+        403,
+        "insufficient_scope",
+    )
+
+
+def test_cancel_after_start_is_409(api_client, bearer):
+    """Arrange a slot that has already started, using a clock the repository shares."""
+    from app.data.memory import MemorySlotRepository
+
+    started = datetime.now(UTC) - timedelta(minutes=5)
+    uow = MemoryUnitOfWork(slots=MemorySlotRepository(clock=lambda: datetime.now(UTC)))
+    uow.slots.add(
+        MachineSlot(id=9, machine_id=4, start_time=started, end_time=started + timedelta(hours=1))
+    )
+    slot = uow.slots.get(9)
+    slot.reservations.append(
+        Reservation(
+            id=None,
+            slot_id=9,
+            user_id=ALICE,
+            status=ReservationStatus.CONFIRMED,
+            confirmation_email="alice@example.com",
+            confirmed_at=started - timedelta(hours=1),
+        )
+    )
+    uow.slots.save(slot)
+    reservation_id = slot.reservations[0].id
+
+    app.dependency_overrides[get_uow_factory] = lambda: uow
+    try:
+        check_error(
+            api_client.delete(f"/reservations/res_{reservation_id}", headers=bearer(ALICE)),
+            DELETE,
+            "delete",
+            409,
+            "too_late_to_cancel",
+        )
+    finally:
+        app.dependency_overrides.pop(get_uow_factory, None)

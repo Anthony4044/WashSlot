@@ -10,7 +10,7 @@ from tests.conformance.contract import check, check_error
 from tests.conformance.slots import find_free_slot
 from tests.conformance.users import PASSWORD, unique_email
 
-LIST, GET = "/me/reservations", "/reservations/{reservationId}"
+LIST, GET, DELETE = "/me/reservations", "/reservations/{reservationId}", "/reservations/{reservationId}"
 UNKNOWN = "res_999999999"
 
 
@@ -80,3 +80,29 @@ def test_unknown_reservation_is_404(api, customer):
 def test_no_token_is_401(api):
     check_error(api.get("/me/reservations"), LIST, "get", 401, "missing_token")
     check_error(api.get(f"/reservations/{UNKNOWN}"), GET, "get", 401, "missing_token")
+    check_error(api.delete(f"/reservations/{UNKNOWN}"), DELETE, "delete", 401, "missing_token")
+
+
+def test_cancel_then_cancel_again(api, customer):
+    reservation_id = hold_then_confirm(api, customer, find_free_slot(api))
+    first = api.delete(f"/reservations/{reservation_id}", headers=auth(customer))
+    assert first.status_code == 204
+    again = api.delete(f"/reservations/{reservation_id}", headers=auth(customer))
+    assert again.status_code == 204
+    listed = check(api.get("/me/reservations", headers=auth(customer)), LIST, "get")
+    mine = next(item for item in listed["reservations"] if item["reservationId"] == reservation_id)
+    assert mine["status"] == "CANCELLED"
+
+
+def test_cancel_someone_elses_is_404(api, customer):
+    reservation_id = hold_then_confirm(api, customer, find_free_slot(api))
+    stranger_email = unique_email()
+    api.post("/auth/register", json={"email": stranger_email, "password": PASSWORD})
+    token = api.post("/auth/login", json={"email": stranger_email, "password": PASSWORD}).json()["accessToken"]
+    check_error(
+        api.delete(f"/reservations/{reservation_id}", headers={"Authorization": f"Bearer {token}"}),
+        DELETE,
+        "delete",
+        404,
+        "not_found",
+    )

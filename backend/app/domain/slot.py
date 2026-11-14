@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from app.domain.enums import MachineType, ReservationStatus
-from app.domain.errors import AlreadyCancelled, HoldExpired, NotFound, SlotUnavailable
+from app.domain.errors import AlreadyCancelled, HoldExpired, NotFound, SlotUnavailable, TooLateToCancel
 
 ACTIVE_STATUSES = (ReservationStatus.HELD, ReservationStatus.CONFIRMED)
 
@@ -56,7 +56,12 @@ class MachineSlot:
         return next((r for r in self.reservations if r.is_active(now)), None)
 
     def is_available(self, now: datetime) -> bool:
-        """THE availability rule, stated once. Read models must agree with it (pinned by a test)."""
+        """THE availability rule, stated once. Read models must agree with it (pinned by a test).
+
+        A slot in the past (start_time already reached) cannot be reserved.
+        """
+        if now >= self.start_time:
+            return False
         return self.active_reservation(now) is None
 
     def expire_stale_holds(self, now: datetime) -> list[Reservation]:
@@ -88,7 +93,7 @@ class MachineSlot:
         #    for the database's partial unique index, which still sees a stale row as HELD until we change it.
         self.expire_stale_holds(now)
 
-        # 2. The rule: if someone holds it or has reserved it (live HELD or CONFIRMED), refuse.
+        # 2. Past slots, or slots someone holds / has reserved → refuse (same rule as is_available).
         if not self.is_available(now):
             raise SlotUnavailable()
 
@@ -121,6 +126,26 @@ class MachineSlot:
             raise HoldExpired()
         r.status = ReservationStatus.CONFIRMED
         r.confirmed_at = now
+        return r
+
+    def cancel(self, reservation_id: int, now: datetime) -> Reservation:
+        """Cancel a future booking so the slot opens again (US-5.3). `now` is the database clock.
+
+        Allowed only before the slot starts (proposal + contract). Already CANCELLED → same end
+        state (naturally idempotent). Ownership is checked by the service first.
+        """
+        r = self.reservation(reservation_id)
+        if r is None:
+            raise NotFound()
+        if r.status == ReservationStatus.CANCELLED:
+            return r
+        if now >= self.start_time:
+            raise TooLateToCancel()
+        if r.status not in (ReservationStatus.HELD, ReservationStatus.CONFIRMED):
+            # EXPIRED / NO_SHOW are not future bookings you cancel
+            raise TooLateToCancel()
+        r.status = ReservationStatus.CANCELLED
+        r.cancelled_at = now
         return r
 
 

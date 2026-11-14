@@ -1,4 +1,4 @@
-"""GET /me/reservations and GET /reservations/{id} (US-4.3).
+"""GET /me/reservations, GET /reservations/{id} (US-4.3), DELETE /reservations/{id} (US-5.3).
 
 Thin interface: parse, call the service, map Outcome to HTTP. Ownership is in the service.
 """
@@ -28,6 +28,7 @@ def get_reservation_service(
 
 Service = Annotated[ReservationService, Depends(get_reservation_service)]
 Reader = Annotated[CurrentUser, Depends(require_scope("reservations:read"))]
+Writer = Annotated[CurrentUser, Depends(require_scope("reservations:write"))]
 
 
 @router.get(
@@ -52,3 +53,15 @@ def list_my_reservations(user: Reader, service: Service):
 def get_reservation(reservation_id: str, user: Reader, service: Service):
     """Safe. Someone else's reservation is 404 not_found."""
     return to_response(service.get(user.id, parse_id(RESERVATION, reservation_id)))
+
+
+@router.delete(
+    "/reservations/{reservation_id}",
+    operation_id="cancelReservation",
+    status_code=204,
+    responses={**AUTH_ERRORS, 409: {"model": ErrorResponse}},
+    summary="Cancel one of my reservations",
+)
+def cancel_reservation(reservation_id: str, user: Writer, service: Service):
+    """Only before the slot starts. Already cancelled → 204 again. Someone else's → 404."""
+    return to_response(service.cancel(user.id, parse_id(RESERVATION, reservation_id)), 204)

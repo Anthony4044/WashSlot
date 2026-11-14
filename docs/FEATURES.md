@@ -110,7 +110,19 @@ What is **on `main` today**, how to try it, and where the code lives. Owners are
 | As Alice: confirm a hold → **My reservations** shows it | `GET /me/reservations` | Service: `app/services/reservations.py` |
 | As Bob: same list does **not** show Alice’s booking | `GET /reservations/{id}` as other user → 404 | API: `app/api/routes/reservations.py` |
 | Logged out → prompted to log in | `pytest tests/test_service_reservations.py tests/test_reservations_api.py` | List query: `SqlSlotRepository.list_for_user` |
-| | Conformance: `tests/conformance/test_reservations.py` | UI: `pages/ReservationsPage.jsx`, `reservations.js` |
+| HELD row → opens hold page (timer + Confirm) | Conformance: `tests/conformance/test_reservations.py` | UI: `pages/ReservationsPage.jsx`, `reservations.js` |
+
+---
+
+## 9. Cancel a future reservation (US-5.3) — @Lemonada10
+
+**What:** `DELETE /reservations/{id}` cancels **only before the slot starts** (proposal + contract). After start → `409 too_late_to_cancel`. Already cancelled → `204` again. Someone else’s → `404`. Slot becomes free again.
+
+| How to test (browser) | How to test (API / pytest) | Where in code |
+|---|---|---|
+| Confirm a booking → **Cancel** → confirm dialog → status CANCELLED | `DELETE /reservations/{id}` | Domain: `MachineSlot.cancel` |
+| Browse that slot → AVAILABLE again | `pytest` domain/service/API reservation tests | Service + route: `reservations.py` |
+| | Conformance cancel cases in `test_reservations.py` | UI: Cancel button on `/reservations` |
 
 ---
 
@@ -120,10 +132,10 @@ What is **on `main` today**, how to try it, and where the code lives. Owners are
 2. Open app → Register or login as Alice  
 3. Laundromats → location → tomorrow → **Free**  
 4. Hold → Confirm  
-5. My reservations → see CONFIRMED row  
+5. My reservations → see CONFIRMED row → **Cancel** (before start) → slot free again  
 6. Logout → login as Bob → reservations empty / Alice’s `res_…` URL → error  
 7. (Optional) Race pytest with `TEST_DATABASE_URL`
 
-## Not in Milestone 2 yet
+## Not required for Milestone 2 (later weeks)
 
-Cancel reservation, hold expiry worker, idempotency replay store, confirmation email (Resend), operator tools, check-in, health/Docker — planned in Weeks 10–12 ([PROJECT_PLAN.md](../PROJECT_PLAN.md)).
+Hold expiry worker, idempotency replay store, confirmation email (Resend), operator tools, check-in, health/Docker — Weeks 10–12 ([PROJECT_PLAN.md](../PROJECT_PLAN.md)).

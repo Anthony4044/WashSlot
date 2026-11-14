@@ -160,6 +160,7 @@ class SqlLaundromatRepository:
                 ),
             )
         )
+        still_in_future = MachineSlotRow.start_time > func.now()
         rows = self.session.execute(
             select(
                 MachineRow.id,
@@ -169,6 +170,7 @@ class SqlLaundromatRepository:
                 MachineSlotRow.start_time,
                 MachineSlotRow.end_time,
                 taken.label("taken"),
+                still_in_future.label("future"),
             )
             .join(MachineSlotRow, MachineSlotRow.machine_id == MachineRow.id)
             .where(
@@ -187,9 +189,10 @@ class SqlLaundromatRepository:
                 slot_id=slot_id,
                 start_time=start_time,
                 end_time=end_time,
-                available=not taken_flag,
+                # Matches MachineSlot.is_available: not taken AND not started yet.
+                available=(not taken_flag) and bool(future_flag),
             )
-            for machine_id, label, machine_type, slot_id, start_time, end_time, taken_flag in rows
+            for machine_id, label, machine_type, slot_id, start_time, end_time, taken_flag, future_flag in rows
         ]
 
 

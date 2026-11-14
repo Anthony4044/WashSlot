@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.domain.enums import ReservationStatus
-from app.domain.errors import AlreadyCancelled, HoldExpired, NotFound, SlotUnavailable
+from app.domain.errors import AlreadyCancelled, HoldExpired, NotFound, SlotUnavailable, TooLateToCancel
 from app.domain.slot import MachineSlot, Reservation
 
 NOW = datetime(2026, 11, 20, 22, 0, tzinfo=UTC)
@@ -22,6 +22,27 @@ def res(status: ReservationStatus, expires_in_min: int | None = 10) -> Reservati
 
 def test_empty_slot_is_available():
     assert slot_with().is_available(NOW)
+
+
+def test_a_slot_that_already_started_is_not_available():
+    past = MachineSlot(
+        id=1,
+        machine_id=1,
+        start_time=NOW - timedelta(minutes=1),
+        end_time=NOW + timedelta(hours=1),
+    )
+    assert not past.is_available(NOW)
+
+
+def test_place_hold_on_a_past_slot_is_slot_unavailable():
+    past = MachineSlot(
+        id=1,
+        machine_id=1,
+        start_time=NOW - timedelta(minutes=1),
+        end_time=NOW + timedelta(hours=1),
+    )
+    with pytest.raises(SlotUnavailable):
+        past.place_hold(1, "a@b.c", NOW, minutes=10)
 
 
 def test_live_hold_and_confirmed_reservation_take_the_slot():
@@ -147,3 +168,44 @@ def test_confirm_a_cancelled_reservation_is_already_cancelled():
 def test_confirm_an_unknown_reservation_is_not_found():
     with pytest.raises(NotFound):
         held().confirm(8, NOW)
+
+
+# --- cancel (US-5.3) ------------------------------------------------------------------------
+
+def confirmed() -> MachineSlot:
+    r = res(ReservationStatus.CONFIRMED, None)
+    r.id = 7
+    return slot_with(r)
+
+
+def test_cancel_a_confirmed_reservation_before_start():
+    slot = confirmed()
+    r = slot.cancel(7, NOW)
+    assert r.status == ReservationStatus.CANCELLED and r.cancelled_at == NOW
+    assert slot.is_available(NOW)
+
+
+def test_cancel_a_live_hold_before_start():
+    slot = held()
+    r = slot.cancel(7, NOW)
+    assert r.status == ReservationStatus.CANCELLED
+    assert slot.is_available(NOW)
+
+
+def test_cancel_twice_is_idempotent():
+    slot = confirmed()
+    first = slot.cancel(7, NOW)
+    again = slot.cancel(7, NOW + timedelta(minutes=5))
+    assert again is first and again.cancelled_at == NOW
+
+
+def test_cancel_at_or_after_slot_start_is_too_late():
+    slot = confirmed()
+    with pytest.raises(TooLateToCancel):
+        slot.cancel(7, slot.start_time)
+    assert slot.reservations[0].status == ReservationStatus.CONFIRMED
+
+
+def test_cancel_unknown_reservation_is_not_found():
+    with pytest.raises(NotFound):
+        confirmed().cancel(8, NOW)

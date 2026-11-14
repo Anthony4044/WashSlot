@@ -1,10 +1,12 @@
 """Use cases on the caller's reservations (SERVICE layer):
 - list mine     GET /me/reservations           (US-4.3)
 - fetch one     GET /reservations/{id}         (US-4.3)
+- cancel        DELETE /reservations/{id}      (US-5.3)
 
 Ownership is checked here: someone else's reservation is `not_found`, so we never reveal it exists.
 """
 from app.domain.enums import ReservationStatus
+from app.domain.errors import DomainError
 from app.services.outcome import Outcome
 from app.services.unit_of_work import UnitOfWorkFactory
 from app.services.views import ReservationListDto, reservation_dto
@@ -34,6 +36,20 @@ class ReservationService:
             _apply_lazy_expiry(reservation, uow.slots.now())
             details = uow.slots.details(slot.id)
         return Outcome.success(reservation_dto(reservation, details))
+
+    def cancel(self, user_id: int, reservation_id: int) -> Outcome:
+        """DELETE /reservations/{id}. Only before the slot starts; already cancelled → 204 again."""
+        try:
+            with self.uow_factory() as uow:
+                slot = uow.slots.get_for_reservation(reservation_id, lock=True)
+                reservation = slot.reservation(reservation_id) if slot else None
+                if reservation is None or reservation.user_id != user_id:
+                    return Outcome.failure("not_found")
+                slot.cancel(reservation_id, uow.slots.now())
+                uow.slots.save(slot)
+        except DomainError as refused:
+            return Outcome.failure(refused.code)
+        return Outcome.success(None)
 
 
 def _apply_lazy_expiry(reservation, now) -> None:
