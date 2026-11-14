@@ -47,8 +47,12 @@ function ReservationRow({ reservation: r, onCancel, busyId }) {
     )
   }
 
+  const cancelled = r.status === 'CANCELLED'
+
   return (
-    <li className="reservation-item reservation-item-actions">
+    <li
+      className={`reservation-item reservation-item-actions${cancelled ? ' reservation-item-cancelled' : ''}`}
+    >
       <div className="reservation-main">{details}</div>
       {cancellable && (
         <button type="button" className="button-secondary" disabled={busy} onClick={() => onCancel(r)}>

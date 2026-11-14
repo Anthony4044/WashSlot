@@ -567,8 +567,26 @@ a.reservation-main-link:hover .reservation-where {
   color: var(--focus);
 }
 
-.status-cancelled,
 .status-expired,
 .status-no_show {
+  color: var(--muted);
+}
+
+.status-cancelled {
+  color: #8a1f1f;
+  background: rgba(138, 31, 31, 0.12);
+  border: 1px solid rgba(138, 31, 31, 0.35);
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+}
+
+.reservation-item-cancelled {
+  opacity: 0.78;
+  background: #f7f4ef;
+}
+
+.reservation-item-cancelled .reservation-where,
+.reservation-item-cancelled .reservation-when {
+  text-decoration: line-through;
   color: var(--muted);
 }
