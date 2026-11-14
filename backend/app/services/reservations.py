@@ -20,12 +20,27 @@ class ReservationService:
             now = uow.slots.now()
             items = []
             for reservation, details in uow.slots.list_for_user(user_id):
-                # Same lazy expiry as get_hold: a HELD past expires_at shows EXPIRED (nothing saved).
-                if (
-                    reservation.status == ReservationStatus.HELD
-                    and reservation.expires_at is not None
-                    and reservation.expires_at <= now
-                ):
-                    reservation.status = ReservationStatus.EXPIRED
+                _apply_lazy_expiry(reservation, now)
                 items.append(reservation_dto(reservation, details))
         return Outcome.success(ReservationListDto(reservations=items))
+
+    def get(self, user_id: int, reservation_id: int) -> Outcome:
+        """GET /reservations/{id}. Ownership lives here: someone else's -> not_found."""
+        with self.uow_factory() as uow:
+            slot = uow.slots.get_for_reservation(reservation_id)
+            reservation = slot.reservation(reservation_id) if slot else None
+            if reservation is None or reservation.user_id != user_id:
+                return Outcome.failure("not_found")
+            _apply_lazy_expiry(reservation, uow.slots.now())
+            details = uow.slots.details(slot.id)
+        return Outcome.success(reservation_dto(reservation, details))
+
+
+def _apply_lazy_expiry(reservation, now) -> None:
+    """A HELD past expires_at shows EXPIRED for the response; nothing is written."""
+    if (
+        reservation.status == ReservationStatus.HELD
+        and reservation.expires_at is not None
+        and reservation.expires_at <= now
+    ):
+        reservation.status = ReservationStatus.EXPIRED
