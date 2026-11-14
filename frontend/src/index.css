@@ -185,6 +185,44 @@ code {
   padding: 0.35rem 0;
 }
 
+/* Laundromat list (US-3.1) */
+
+.laundromat-list {
+  list-style: none;
+  margin: 1.2rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.laundromat-link {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  background: #fff;
+}
+
+.laundromat-link:hover {
+  border-color: var(--accent);
+  color: inherit;
+}
+
+.laundromat-name {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.laundromat-address {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 /* Forms (login, register) */
 
 .form-page {
