@@ -6,7 +6,7 @@ loaded and saved through their slot, so every writer passes the same door - the 
 from dataclasses import replace
 from datetime import datetime
 
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -82,6 +82,22 @@ class SqlSlotRepository:
                 for field, value in values.items():
                     setattr(row, field, value)
         self.session.flush()
+
+    def expire_all_stale_holds(self) -> int:
+        """Worker job (US-5.1): one UPDATE for the whole table, using the database clock.
+
+            UPDATE reservations SET status = 'EXPIRED'
+            WHERE status = 'HELD' AND expires_at <= now()
+
+        Same rule as Reservation.expire_if_stale. Safe next to a confirm: Postgres re-checks the
+        WHERE on a row another transaction just changed, so a hold confirmed in time stays CONFIRMED.
+        """
+        result = self.session.execute(
+            update(ReservationRow)
+            .where(ReservationRow.status == ReservationStatus.HELD, ReservationRow.expires_at <= func.now())
+            .values(status=ReservationStatus.EXPIRED)
+        )
+        return result.rowcount
 
     def details(self, slot_id: int) -> SlotDetails | None:
         """One query joining slot -> machine -> laundromat. No lock: nothing is decided on it."""
@@ -197,7 +213,7 @@ class SqlLaundromatRepository:
 
 
 class SqlUserRepository:
-    """Repository + Data Mapper for users (lecture Ch. 6).
+    """Repository + Data Mapper for users.
 
     The service asks for domain objects ("the user with this email") and gets a User back, never a
     UserRow, so the layers above never learn that a database exists. All the SQL lives here. It only
@@ -218,7 +234,7 @@ class SqlUserRepository:
         """INSERT ... ON CONFLICT (email) DO NOTHING: of two sign-ups racing for one email,
         exactly one gets a row and the other gets None, with no error and no check-then-insert gap.
 
-        Why not "SELECT first, INSERT if free"? That is the check-then-act race from Ch. 7: two
+        Why not "SELECT first, INSERT if free"? That is a check-then-act race: two
         requests both SELECT, both see the email free, and both INSERT. Here the database's unique
         constraint (uq_users_email) decides, inside the one INSERT statement, so there is no gap."""
         new_id = self.session.execute(
@@ -228,3 +244,4 @@ class SqlUserRepository:
             .returning(UserRow.id)
         ).scalar_one_or_none()
         return None if new_id is None else replace(user, id=new_id)
+

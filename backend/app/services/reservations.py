@@ -5,7 +5,6 @@
 
 Ownership is checked here: someone else's reservation is `not_found`, so we never reveal it exists.
 """
-from app.domain.enums import ReservationStatus
 from app.domain.errors import DomainError
 from app.services.outcome import Outcome
 from app.services.unit_of_work import UnitOfWorkFactory
@@ -22,7 +21,7 @@ class ReservationService:
             now = uow.slots.now()
             items = []
             for reservation, details in uow.slots.list_for_user(user_id):
-                _apply_lazy_expiry(reservation, now)
+                reservation.expire_if_stale(now)  # lazy expiry, shown only: nothing is saved
                 items.append(reservation_dto(reservation, details))
         return Outcome.success(ReservationListDto(reservations=items))
 
@@ -33,7 +32,7 @@ class ReservationService:
             reservation = slot.reservation(reservation_id) if slot else None
             if reservation is None or reservation.user_id != user_id:
                 return Outcome.failure("not_found")
-            _apply_lazy_expiry(reservation, uow.slots.now())
+            reservation.expire_if_stale(uow.slots.now())  # lazy expiry, shown only: nothing is saved
             details = uow.slots.details(slot.id)
         return Outcome.success(reservation_dto(reservation, details))
 
@@ -50,13 +49,3 @@ class ReservationService:
         except DomainError as refused:
             return Outcome.failure(refused.code)
         return Outcome.success(None)
-
-
-def _apply_lazy_expiry(reservation, now) -> None:
-    """A HELD past expires_at shows EXPIRED for the response; nothing is written."""
-    if (
-        reservation.status == ReservationStatus.HELD
-        and reservation.expires_at is not None
-        and reservation.expires_at <= now
-    ):
-        reservation.status = ReservationStatus.EXPIRED

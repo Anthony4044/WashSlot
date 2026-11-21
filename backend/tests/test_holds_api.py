@@ -137,7 +137,7 @@ def test_confirm_on_the_database(client, db_session, bearer):
 
 def test_the_database_clock_decides_expiry(client, db_session, bearer):
     user, slot = make_user(db_session), make_slot(db_session)
-    hold = make_reservation(db_session, user, slot, expires_at=datetime.now(UTC) - timedelta(seconds=1))
+    hold = make_reservation(db_session, user, slot, expires_at=datetime.now(UTC) - timedelta(minutes=1))
     db_session.commit()
 
     r = client.post(f"/holds/hold_{hold.id}/confirm", headers=bearer(user.id))

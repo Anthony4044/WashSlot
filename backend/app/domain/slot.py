@@ -38,6 +38,17 @@ class Reservation:
             return True
         return self.status == ReservationStatus.HELD and self.expires_at is not None and self.expires_at > now
 
+    def expire_if_stale(self, now: datetime) -> bool:
+        """THE expiry rule, stated once (US-5.1): a HELD whose time ran out becomes EXPIRED.
+
+        Every place that shows or changes a hold calls this, so a hold expires on time even
+        when the background worker is late or not running. Returns True if it just expired.
+        """
+        if self.status == ReservationStatus.HELD and self.expires_at is not None and self.expires_at <= now:
+            self.status = ReservationStatus.EXPIRED
+            return True
+        return False
+
 
 @dataclass
 class MachineSlot:
@@ -72,8 +83,7 @@ class MachineSlot:
         """
         expired = []
         for r in self.reservations:
-            if r.status == ReservationStatus.HELD and r.expires_at is not None and r.expires_at <= now:
-                r.status = ReservationStatus.EXPIRED
+            if r.expire_if_stale(now):
                 expired.append(r)
         return expired
 
@@ -81,10 +91,10 @@ class MachineSlot:
         """Hold this slot for one customer for `minutes` (US-4.1). Raises SlotUnavailable if it is taken.
 
         This is the domain rule "at most one active reservation per slot", checked at the only door
-        that adds a reservation. It knows nothing about HTTP, SQL or locks (lecture Ch. 5).
+        that adds a reservation. It knows nothing about HTTP, SQL or locks.
 
         On its own, this check is a read-decide-write: two requests could both see the slot free
-        and both add a hold (the check-then-act race, Ch. 7). The service prevents that by locking
+        and both add a hold (a check-then-act race). The service prevents that by locking
         the slot row first (SELECT ... FOR UPDATE), so only one request at a time runs this method.
 
         `now` is the database clock, passed in by the service, so every server agrees on the time.

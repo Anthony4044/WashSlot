@@ -164,7 +164,7 @@ def test_an_expired_hold_on_the_database_allows_a_new_hold(client, db_session, b
     otherwise the INSERT would hit the index. This test proves the order is right.
     """
     bob, alice, slot = make_user(db_session, "bob@example.com"), make_user(db_session), make_slot(db_session)
-    stale = make_reservation(db_session, bob, slot, expires_at=datetime.now(UTC) - timedelta(seconds=1))
+    stale = make_reservation(db_session, bob, slot, expires_at=datetime.now(UTC) - timedelta(minutes=1))
     db_session.commit()
 
     r = hold(client, slot_id=f"slot_{slot.id}", headers={**bearer(alice.id), **KEY})
