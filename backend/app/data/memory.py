@@ -8,8 +8,9 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from app.domain.availability import SlotAvailabilityRow
-from app.domain.enums import MachineType
+from app.domain.enums import MachineType, OutboxStatus
 from app.domain.laundromat import Laundromat
+from app.domain.notification import CLAIM_LEASE, OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
 
@@ -138,6 +139,33 @@ class MemoryLaundromatRepository:
         return sorted(rows, key=lambda r: (r.machine_label, r.machine_id, r.start_time))
 
 
+class MemoryOutboxRepository:
+    """Same behaviour as SqlOutboxRepository. Tests read `messages` to see what was written."""
+
+    def __init__(self, clock):
+        self.messages: dict[int, OutboxMessage] = {}
+        self._next_id = 1
+        self._clock = clock
+
+    def add(self, message: OutboxMessage) -> None:
+        message.id = self._next_id
+        message.created_at = self._clock()
+        self._next_id += 1
+        self.messages[message.id] = copy.deepcopy(message)
+
+    def claim_next(self) -> OutboxMessage | None:
+        now = self._clock()
+        due = [m for m in self.messages.values() if m.status == OutboxStatus.PENDING and m.next_attempt_at <= now]
+        if not due:
+            return None
+        oldest = min(due, key=lambda m: (m.next_attempt_at, m.id))
+        oldest.next_attempt_at = now + CLAIM_LEASE
+        return copy.deepcopy(oldest)
+
+    def save(self, message: OutboxMessage) -> None:
+        self.messages[message.id] = copy.deepcopy(message)
+
+
 class MemoryUnitOfWork:
     """Same interface as SqlAlchemyUnitOfWork. Shares one store across units of work."""
 
@@ -146,10 +174,12 @@ class MemoryUnitOfWork:
         slots: MemorySlotRepository | None = None,
         users: MemoryUserRepository | None = None,
         laundromats: MemoryLaundromatRepository | None = None,
+        outbox: MemoryOutboxRepository | None = None,
     ):
         self.slots = slots or MemorySlotRepository()
         self.users = users or MemoryUserRepository()
         self.laundromats = laundromats or MemoryLaundromatRepository(self.slots)
+        self.outbox = outbox or MemoryOutboxRepository(clock=self.slots.now)  # same clock as the slots
         self.committed = False
 
     def __call__(self) -> "MemoryUnitOfWork":  # lets the instance act as its own factory

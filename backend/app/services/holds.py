@@ -6,7 +6,9 @@
 A hold and the reservation it becomes are the same row, so hold_7 and res_7 name the same thing.
 Someone else's hold is `not_found`: we never reveal that it exists.
 """
+from app.domain.enums import ReservationStatus
 from app.domain.errors import DomainError
+from app.domain.notification import confirmation_email
 from app.services.outcome import Outcome
 from app.services.unit_of_work import UnitOfWorkFactory
 from app.services.views import hold_dto, reservation_dto
@@ -70,6 +72,10 @@ class HoldService:
 
         One unit of work: lock the slot (the aggregate root, never just the reservation row), check
         the owner, let the domain rule decide with the database clock, save.
+
+        US-6.1: the first confirm also writes a confirmation email to the outbox, in this SAME unit
+        of work, so the reservation and its email are saved together or not at all. Resend is
+        never called here; the worker sends the email after we commit.
         """
         try:
             with self.uow_factory() as uow:
@@ -77,9 +83,19 @@ class HoldService:
                 hold = slot.reservation(hold_id) if slot else None
                 if hold is None or hold.user_id != user_id:
                     return Outcome.failure("not_found")
-                reservation = slot.confirm(hold_id, uow.slots.now())
+                first_confirm = hold.status == ReservationStatus.HELD  # a repeat must not send a 2nd email
+                now = uow.slots.now()
+                reservation = slot.confirm(hold_id, now)
                 uow.slots.save(slot)
                 details = uow.slots.details(slot.id)
+                if first_confirm:
+                    laundromat = uow.laundromats.get(details.laundromat_id)
+                    uow.outbox.add(confirmation_email(
+                        reservation, details,
+                        laundromat_address=laundromat.address if laundromat else "",
+                        timezone=laundromat.timezone if laundromat else "UTC",
+                        now=now,
+                    ))
         except DomainError as refused:  # raised inside the unit of work, so nothing was written
             return Outcome.failure(refused.code)
         return Outcome.success(reservation_dto(reservation, details))
