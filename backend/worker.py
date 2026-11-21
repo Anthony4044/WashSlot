@@ -8,7 +8,7 @@ How it works: a loop that wakes up every second and runs each job whose turn has
 Each job is a plain function that gets a unit-of-work factory (the same one the API uses),
 so it talks to the database through the service layer, never with its own SQL.
 
-Adding a job (US-5.2 retention, US-6.1 emails, US-7.2 no-shows, ...): write a function below that takes
+Adding a job (US-5.2 retention, US-7.2 no-shows, ...): write a function below that takes
 `uow_factory`, then add ONE line to JOBS. Keep both sides when you resolve a merge conflict here.
 
 The app is still correct when the worker is stopped: requests check expiry themselves (lazy
@@ -17,8 +17,10 @@ expiry). The worker only brings the database up to date.
 import logging
 import time
 
+from app.core.email import get_email_sender
 from app.data.database import get_session_factory
 from app.data.unit_of_work import SqlAlchemyUnitOfWork
+from app.services.emails import EmailService
 from app.services.holds import HoldService
 from app.services.unit_of_work import UnitOfWorkFactory
 
@@ -34,9 +36,17 @@ def expire_holds(uow_factory: UnitOfWorkFactory) -> None:
         log.info("expired %d hold(s)", count)
 
 
+def send_emails(uow_factory: UnitOfWorkFactory) -> None:
+    """US-6.1: send the confirmation emails waiting in the outbox (failed ones are retried later)."""
+    count = EmailService(uow_factory, get_email_sender()).send_due_emails()
+    if count:
+        log.info("sent %d email(s)", count)
+
+
 # (name, function, run every N seconds). Add one line per job.
 JOBS = [
     ("expire holds", expire_holds, 30),
+    ("send emails", send_emails, 5),
 ]
 
 

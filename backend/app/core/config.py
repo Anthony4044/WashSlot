@@ -30,7 +30,10 @@ class Settings(BaseSettings):
     jwt_audience: str = "https://api.washslot.local"
     jwt_expires_minutes: int = 60
 
+    # Confirmation emails (US-6.1). Without an API key the worker only logs the email.
     resend_api_key: str | None = None
+    email_from: str = "WashSlot <onboarding@resend.dev>"  # Resend's test sender works without a domain
+    email_fake_failures: int = 0  # > 0: the first N sends fail on purpose (tests and the demo)
 
     cors_origins: str = "http://localhost:5173"
     hold_minutes: int = 10

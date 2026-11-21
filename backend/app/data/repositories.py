@@ -10,10 +10,18 @@ from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.data.tables import LaundromatRow, MachineRow, MachineSlotRow, ReservationRow, UserRow
+from app.data.tables import (
+    LaundromatRow,
+    MachineRow,
+    MachineSlotRow,
+    NotificationOutboxRow,
+    ReservationRow,
+    UserRow,
+)
 from app.domain.availability import SlotAvailabilityRow
-from app.domain.enums import ReservationStatus
+from app.domain.enums import OutboxStatus, ReservationStatus
 from app.domain.laundromat import Laundromat
+from app.domain.notification import CLAIM_LEASE, OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
 
@@ -245,3 +253,64 @@ class SqlUserRepository:
         ).scalar_one_or_none()
         return None if new_id is None else replace(user, id=new_id)
 
+
+_OUTBOX_FIELDS = (
+    "reservation_id",
+    "laundromat_id",
+    "type",
+    "payload",
+    "status",
+    "attempts",
+    "next_attempt_at",
+    "last_error",
+    "correlation_id",
+    "sent_at",
+)
+
+
+class SqlOutboxRepository:
+    """The notification outbox (US-6.1). Messages are written by confirm and sent by the worker."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def add(self, message: OutboxMessage) -> None:
+        row = NotificationOutboxRow(**{f: getattr(message, f) for f in _OUTBOX_FIELDS})
+        self.session.add(row)
+        self.session.flush()  # assigns the id now
+        message.id, message.created_at = row.id, row.created_at
+
+    def claim_next(self) -> OutboxMessage | None:
+        """Take the oldest due PENDING message for this worker:
+
+            SELECT ... FROM notification_outbox
+            WHERE status = 'PENDING' AND next_attempt_at <= now()
+            ORDER BY next_attempt_at, id LIMIT 1
+            FOR UPDATE SKIP LOCKED
+
+        SKIP LOCKED: if another worker is claiming that row right now, skip it instead of waiting.
+        Then we push next_attempt_at forward (the lease) and the unit of work commits, so the
+        email itself is sent OUTSIDE any transaction.
+        """
+        row = self.session.execute(
+            select(NotificationOutboxRow)
+            .where(
+                NotificationOutboxRow.status == OutboxStatus.PENDING,
+                NotificationOutboxRow.next_attempt_at <= func.now(),
+            )
+            .order_by(NotificationOutboxRow.next_attempt_at, NotificationOutboxRow.id)
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        now = self.session.execute(select(func.now())).scalar_one()  # the database clock
+        row.next_attempt_at = now + CLAIM_LEASE
+        self.session.flush()
+        return OutboxMessage(id=row.id, created_at=row.created_at, **{f: getattr(row, f) for f in _OUTBOX_FIELDS})
+
+    def save(self, message: OutboxMessage) -> None:
+        row = self.session.get(NotificationOutboxRow, message.id)
+        for f in _OUTBOX_FIELDS:
+            setattr(row, f, getattr(message, f))
+        self.session.flush()

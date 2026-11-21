@@ -12,7 +12,12 @@ Keep it short: no external calls (email, payments) inside it.
 """
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.data.repositories import SqlLaundromatRepository, SqlSlotRepository, SqlUserRepository
+from app.data.repositories import (
+    SqlLaundromatRepository,
+    SqlOutboxRepository,
+    SqlSlotRepository,
+    SqlUserRepository,
+)
 
 
 class SqlAlchemyUnitOfWork:
@@ -24,6 +29,7 @@ class SqlAlchemyUnitOfWork:
         self.slots = SqlSlotRepository(self.session)
         self.laundromats = SqlLaundromatRepository(self.session)
         self.users = SqlUserRepository(self.session)
+        self.outbox = SqlOutboxRepository(self.session)  # same session: commits with the reservation
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:

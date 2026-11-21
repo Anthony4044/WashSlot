@@ -9,6 +9,7 @@ from typing import Protocol
 
 from app.domain.availability import SlotAvailabilityRow
 from app.domain.laundromat import Laundromat
+from app.domain.notification import OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
 
@@ -57,10 +58,30 @@ class UserRepository(Protocol):
         ...
 
 
+class OutboxRepository(Protocol):
+    """Emails waiting to be sent (US-6.1)."""
+
+    def add(self, message: OutboxMessage) -> None:
+        """Insert a new message (gives it an id). Called inside the confirm unit of work."""
+        ...
+
+    def claim_next(self) -> OutboxMessage | None:
+        """The oldest PENDING message that is due now, or None.
+
+        Claiming pushes its next_attempt_at forward by CLAIM_LEASE, so no other worker takes it.
+        """
+        ...
+
+    def save(self, message: OutboxMessage) -> None:
+        """Write back status, attempts, next_attempt_at, last_error and sent_at."""
+        ...
+
+
 class UnitOfWork(Protocol):
     slots: SlotRepository
     laundromats: LaundromatRepository
     users: UserRepository
+    outbox: OutboxRepository
 
     def __enter__(self) -> "UnitOfWork": ...
     def __exit__(self, exc_type, exc, tb) -> None: ...

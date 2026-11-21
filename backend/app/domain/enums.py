@@ -17,3 +17,9 @@ class ReservationStatus(str, enum.Enum):
     EXPIRED = "EXPIRED"  # hold not confirmed in time
     CANCELLED = "CANCELLED"
     NO_SHOW = "NO_SHOW"  # not checked in 15 min after start
+
+
+class OutboxStatus(str, enum.Enum):
+    PENDING = "PENDING"  # waiting to be sent (or to be retried at next_attempt_at)
+    SENT = "SENT"
+    FAILED = "FAILED"  # gave up: too many tries, or the email service refused it for good
