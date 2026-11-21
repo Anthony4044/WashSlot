@@ -50,6 +50,11 @@ class MemorySlotRepository:
                 self._next_reservation_id += 1
         self._slots[slot.id] = copy.deepcopy(slot)
 
+    def expire_all_stale_holds(self) -> int:
+        """Same as the SQL UPDATE, using the domain rule on every reservation."""
+        now = self._clock()
+        return sum(len(slot.expire_stale_holds(now)) for slot in self._slots.values())
+
     def details(self, slot_id: int) -> SlotDetails | None:
         return self._details.get(slot_id)
 

@@ -1,4 +1,4 @@
-"""Use cases on holds (the SERVICE layer, lecture Ch. 5):
+"""Use cases on holds (the SERVICE layer):
 - place a hold      POST /slots/{slotId}/holds      (US-4.1)
 - look at my hold   GET /holds/{holdId}             (US-4.2)
 - confirm it        POST /holds/{holdId}/confirm    (US-4.2)
@@ -22,7 +22,7 @@ class HoldService:
     def place_hold(self, user_id: int, slot_id: int, confirmation_email: str) -> Outcome:
         """Use case: hold a slot for 10 minutes. Success -> HoldDto; else "not_found" or "slot_unavailable".
 
-        Pessimistic locking (lecture Ch. 7): read, decide and write in ONE transaction, with the slot
+        Pessimistic locking: read, decide and write in ONE transaction, with the slot
         row locked from the read until the commit:
 
             BEGIN
@@ -49,7 +49,7 @@ class HoldService:
                 uow.slots.save(slot)
                 details = uow.slots.details(slot.id)  # where and when, for the response
             # The block ended normally: COMMIT, and the lock is released. Only now is the hold real,
-            # so only now do we report success (Ch. 7: say "success" only after COMMIT returns).
+            # so only now do we report success (never say "success" before COMMIT returns).
         except DomainError as refused:
             return Outcome.failure(refused.code)  # "slot_unavailable"; the interface layer makes it a 409
         return Outcome.success(hold_dto(hold, details))
@@ -83,3 +83,12 @@ class HoldService:
         except DomainError as refused:  # raised inside the unit of work, so nothing was written
             return Outcome.failure(refused.code)
         return Outcome.success(reservation_dto(reservation, details))
+
+    def expire_stale_holds(self) -> int:
+        """Worker job (US-5.1): mark every hold whose time ran out as EXPIRED. Returns how many.
+
+        Not needed for correctness: every request already treats a stale hold as expired (lazy
+        expiry). This job only makes the database say so too, so it is tidy for reports.
+        """
+        with self.uow_factory() as uow:
+            return uow.slots.expire_all_stale_holds()
