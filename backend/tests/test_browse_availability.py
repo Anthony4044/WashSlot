@@ -10,9 +10,9 @@ import pytest
 from app.data.tables import MachineRow
 from app.domain.enums import ReservationStatus
 from app.services.ids import format_id
-from tests.factories import make_reservation, make_slot, make_user
+from tests.factories import START, TORONTO, make_reservation, make_slot, make_user
 
-DAY = "2026-11-20"  # factories.START is 18:00 America/Toronto on this day
+DAY = START.astimezone(TORONTO).date().isoformat()  # the Toronto day of factories.START
 
 
 def _day_bounds(timezone: str = "America/Toronto"):

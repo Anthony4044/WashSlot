@@ -120,8 +120,9 @@ def test_cancel_someone_elses_is_404(memory_client, memory_uow, bearer):
 
 def test_cancel_needs_write_scope(memory_client, memory_uow, bearer):
     reservation_id = put_reservation(memory_uow, user_id=ALICE)
+    read_only = bearer(ALICE, scopes=("reservations:read",))
     check_error(
-        memory_client.delete(f"/reservations/res_{reservation_id}", headers=bearer(ALICE, scopes=("reservations:read",))),
+        memory_client.delete(f"/reservations/res_{reservation_id}", headers=read_only),
         DELETE,
         "delete",
         403,

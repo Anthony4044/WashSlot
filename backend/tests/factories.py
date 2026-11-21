@@ -1,12 +1,16 @@
 """Helpers that put rows straight into the test database (arrange step of DB tests)."""
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from app.data.tables import LaundromatRow, MachineRow, MachineSlotRow, ReservationRow, UserRow
 from app.domain.enums import MachineType, ReservationStatus
 
-START = datetime(2026, 11, 20, 23, 0, tzinfo=UTC)
+# A week from today at 18:00 in Toronto. It is always in the future, so the slot can still be booked
+# (a fixed date would make the tests fail once that date has passed).
+TORONTO = ZoneInfo("America/Toronto")
+START = datetime.combine(date.today() + timedelta(days=7), time(18, 0), tzinfo=TORONTO).astimezone(UTC)
 
 
 def make_user(db: Session, email: str = "a@example.com") -> UserRow:
