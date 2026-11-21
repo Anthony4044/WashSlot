@@ -56,8 +56,10 @@ def test_engine() -> Iterator[Engine]:
 
     engine = make_engine(settings.test_database_url)
     with engine.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
-        Base.metadata.drop_all(conn)
+        # Wipe everything, including tables from another branch's migrations (e.g. after switching
+        # branches), so the run always starts from an empty database.
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
         cfg = Config(str(BACKEND_DIR / "alembic.ini"))
         cfg.attributes["connection"] = conn
         command.upgrade(cfg, "head")
