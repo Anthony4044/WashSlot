@@ -34,6 +34,12 @@ class TooLateToCancel(DomainError):
     code = "too_late_to_cancel"
 
 
+class InvalidSchedule(DomainError):
+    """An operator's slot schedule that breaks the form's rules (US-7.1): a request problem."""
+
+    code = "invalid_request"
+
+
 class ReservationNotConfirmed(DomainError):
     code = "reservation_not_confirmed"
 

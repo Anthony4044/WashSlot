@@ -11,6 +11,7 @@ from app.domain.availability import SlotAvailabilityRow
 from app.domain.enums import MachineType, OutboxStatus, ReservationStatus
 from app.domain.idempotency import IdempotencyRecord
 from app.domain.laundromat import BOOKING_STATUSES, Laundromat, TodayBooking
+from app.domain.machine import Machine
 from app.domain.notification import CLAIM_LEASE, OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
@@ -22,6 +23,7 @@ class MemorySlotRepository:
         self._details: dict[int, SlotDetails] = {}
         self._next_reservation_id = 1
         self._clock = clock
+        self.machines: MemoryMachineRepository | None = None  # set by MemoryUnitOfWork
 
     def now(self) -> datetime:
         return self._clock()
@@ -34,15 +36,39 @@ class MemorySlotRepository:
             machine_label=f"Washer {slot.machine_id}", machine_type=MachineType.WASHER,
             start_time=slot.start_time, end_time=slot.end_time)
 
+    def all_slots(self) -> list[MachineSlot]:
+        """Test helper: every stored slot, by id."""
+        return [copy.deepcopy(self._slots[i]) for i in sorted(self._slots)]
+
     def get(self, slot_id: int, *, lock: bool = False) -> MachineSlot | None:
         slot = self._slots.get(slot_id)
-        return copy.deepcopy(slot) if slot else None
+        return self._with_machine(copy.deepcopy(slot)) if slot else None
 
     def get_for_reservation(self, reservation_id: int, *, lock: bool = False) -> MachineSlot | None:
         for slot in self._slots.values():
             if any(r.id == reservation_id for r in slot.reservations):
-                return copy.deepcopy(slot)
+                return self._with_machine(copy.deepcopy(slot))
         return None
+
+    def _with_machine(self, slot: MachineSlot) -> MachineSlot:
+        """Like the SQL join: the machine's reservable switch comes along, when the machine is known."""
+        machine = self.machines.get(slot.machine_id) if self.machines else None
+        if machine is not None:
+            slot.machine_reservable = machine.reservable
+        return slot
+
+    def create_many(self, new_slots: list[tuple[int, datetime, datetime]]) -> int:
+        """Same as the SQL INSERT ... ON CONFLICT (machine_id, start_time) DO NOTHING."""
+        taken = {(s.machine_id, s.start_time) for s in self._slots.values()}
+        added = 0
+        for machine_id, start, end in new_slots:
+            if (machine_id, start) in taken:
+                continue
+            self.add(MachineSlot(id=max(self._slots, default=0) + 1, machine_id=machine_id,
+                                 start_time=start, end_time=end))
+            taken.add((machine_id, start))
+            added += 1
+        return added
 
     def save(self, slot: MachineSlot) -> None:
         for r in slot.reservations:
@@ -130,11 +156,11 @@ class MemoryLaundromatRepository:
     def list_all(self) -> list[Laundromat]:
         return sorted(self._laundromats.values(), key=lambda lm: (lm.name, lm.id))
 
+    def list_for_operator(self, user_id: int) -> list[Laundromat]:
+        return [lm for lm in self.list_all() if lm.operator_id == user_id]
+
     def get(self, laundromat_id: int) -> Laundromat | None:
         return self._laundromats.get(laundromat_id)
-
-    def list_for_operator(self, operator_id: int) -> list[Laundromat]:
-        return [lm for lm in self.list_all() if lm.operator_id == operator_id]
 
     def bookings_for_day(self, laundromat_id: int, day_start: datetime, day_end: datetime) -> list[TodayBooking]:
         if self._slots is None or self._users is None:
@@ -204,6 +230,29 @@ class MemoryOutboxRepository:
         self.messages[message.id] = copy.deepcopy(message)
 
 
+class MemoryMachineRepository:
+    """Same behaviour as SqlMachineRepository."""
+
+    def __init__(self):
+        self._machines: dict[int, Machine] = {}
+
+    def add(self, machine: Machine) -> Machine:
+        """Test setup helper."""
+        self._machines[machine.id] = copy.deepcopy(machine)
+        return machine
+
+    def list_for_laundromat(self, laundromat_id: int) -> list[Machine]:
+        found = [m for m in self._machines.values() if m.laundromat_id == laundromat_id]
+        return [copy.deepcopy(m) for m in sorted(found, key=lambda m: (m.label, m.id))]
+
+    def get(self, machine_id: int) -> Machine | None:
+        machine = self._machines.get(machine_id)
+        return copy.deepcopy(machine) if machine else None
+
+    def save(self, machine: Machine) -> None:
+        self._machines[machine.id] = copy.deepcopy(machine)
+
+
 class MemoryIdempotencyRepository:
     """Same behaviour as SqlIdempotencyRepository. Tests read `records` to see what was stored."""
 
@@ -243,12 +292,15 @@ class MemoryUnitOfWork:
         laundromats: MemoryLaundromatRepository | None = None,
         outbox: MemoryOutboxRepository | None = None,
         idempotency: MemoryIdempotencyRepository | None = None,
+        machines: MemoryMachineRepository | None = None,
     ):
         self.slots = slots or MemorySlotRepository()
         self.users = users or MemoryUserRepository()
         self.laundromats = laundromats or MemoryLaundromatRepository(self.slots, self.users)
         self.outbox = outbox or MemoryOutboxRepository(clock=self.slots.now)  # same clock as the slots
         self.idempotency = idempotency or MemoryIdempotencyRepository(clock=self.slots.now)
+        self.machines = machines or MemoryMachineRepository()
+        self.slots.machines = self.machines  # a slot reads its machine's reservable switch, like the SQL join
         self.committed = False
 
     def __call__(self) -> "MemoryUnitOfWork":  # lets the instance act as its own factory

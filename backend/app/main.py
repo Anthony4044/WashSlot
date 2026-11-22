@@ -33,8 +33,8 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(browse.router)
     app.include_router(holds.router)
-    app.include_router(operator.router)
     app.include_router(reservations.router)
+    app.include_router(operator.router)
 
     return app
 

@@ -65,7 +65,7 @@ class ReservationService:
                 details = uow.slots.details(slot.id)
                 if reservation.user_id != user_id:
                     laundromat = uow.laundromats.get(details.laundromat_id)
-                    if laundromat is None or laundromat.operator_id != user_id:
+                    if laundromat is None or not laundromat.is_run_by(user_id):
                         return Outcome.failure("not_found")
                 already_checked_in = reservation.checked_in_at is not None
                 checked_in = slot.check_in(reservation_id, uow.slots.now())

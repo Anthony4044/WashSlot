@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { isLoggedIn } from '../auth.js'
 import { formatSlotHour } from '../browse.js'
-import { listOperatorLaundromats, listTodaysBookings } from '../operator.js'
+import { listMyLaundromats, listTodaysBookings } from '../operator.js'
 import { checkInReservation } from '../reservations.js'
 
 function TodayBookings({ laundromat }) {
@@ -110,7 +110,7 @@ export function OperatorTodayPage() {
   useEffect(() => {
     if (!loggedIn) return undefined
     let active = true
-    listOperatorLaundromats()
+    listMyLaundromats()
       .then((data) => {
         if (active) setLaundromats(data.laundromats)
       })

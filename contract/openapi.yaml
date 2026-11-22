@@ -44,7 +44,9 @@ tags:
   - name: reservations
     description: The caller's own reservations.
   - name: operator
-    description: Tools for the laundromats assigned to an operator.
+    description: >
+      Tools for the operator of a laundromat (scope operator:manage). An operator only ever sees and
+      changes their own laundromats: anyone else's is 404 not_found, as if it did not exist.
 
 paths:
   /auth/register:
@@ -454,21 +456,153 @@ paths:
     get:
       operationId: listOperatorLaundromats
       tags: [operator]
-      summary: List my assigned laundromats
-      description: Safe to retry. Returns only laundromats assigned to the caller.
+      summary: List the laundromats I operate
+      description: >
+        Returns the laundromats the caller operates, by name (usually one). The operator pages start
+        here to learn which laundromat ids they may use. Safe: it changes nothing.
       security:
         - bearerAuth: ["operator:manage"]
       responses:
         "200":
-          description: The operator's assigned laundromats.
+          description: The caller's laundromats.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LaundromatList"
+                type: object
+                required: [laundromats]
+                additionalProperties: false
+                properties:
+                  laundromats:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Laundromat"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /operator/laundromats/{laundromatId}/machines:
+    get:
+      operationId: listOperatorMachines
+      tags: [operator]
+      summary: List the machines of a laundromat I operate
+      description: >
+        Every machine of the laundromat, reservable or walk-in only, by label. Safe: it changes
+        nothing. Another operator's laundromat is 404 not_found.
+      security:
+        - bearerAuth: ["operator:manage"]
+      parameters:
+        - $ref: "#/components/parameters/LaundromatIdPath"
+      responses:
+        "200":
+          description: The laundromat's machines.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [machines]
+                additionalProperties: false
+                properties:
+                  machines:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Machine"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /operator/laundromats/{laundromatId}/machines/{machineId}:
+    patch:
+      operationId: updateMachine
+      tags: [operator]
+      summary: Switch a machine between reservable and walk-in only
+      description: >
+        Sets whether customers can reserve the machine. Switching it off stops NEW holds on its
+        slots (they get 409 slot_unavailable) and hides it from the slot grid; holds and
+        reservations made before stay valid. Idempotent: sending the same value again changes
+        nothing and returns the same machine, so a timed-out caller may simply retry. Another
+        operator's laundromat, or a machine that is not in this laundromat, is 404 not_found.
+      security:
+        - bearerAuth: ["operator:manage"]
+      parameters:
+        - $ref: "#/components/parameters/LaundromatIdPath"
+        - $ref: "#/components/parameters/MachineIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MachineUpdate"
+      responses:
+        "200":
+          description: The machine as it is now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Machine"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /operator/laundromats/{laundromatId}/slots:
+    post:
+      operationId: createSlots
+      tags: [operator]
+      summary: Create slots for a date range
+      description: >
+        Creates back-to-back slots of slotMinutes on every day from fromDate to toDate (inclusive,
+        at most 31 days), between openTime and closeTime in the laundromat's own time zone, for the
+        machines in machineIds, or for every reservable machine when machineIds is left out. A slot
+        that already exists (same machine, same start) or that has already started is skipped, never
+        duplicated. Idempotent: repeating the request creates nothing more (created 0), so a
+        timed-out caller may simply retry. Another operator's laundromat, or a machine that is not
+        in this laundromat, is 404 not_found.
+      security:
+        - bearerAuth: ["operator:manage"]
+      parameters:
+        - $ref: "#/components/parameters/LaundromatIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSlotsRequest"
+      responses:
+        "200":
+          description: How many slots were created and how many were skipped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlotsCreated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: >
+            invalid_request. The body is malformed, toDate is before fromDate, the range is longer
+            than 31 days, closeTime is not after openTime, or not even one slot fits between them.
+            Not retryable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         default:
           $ref: "#/components/responses/ServerError"
 
@@ -521,6 +655,12 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/LaundromatId"
+    MachineIdPath:
+      name: machineId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/MachineId"
     SlotIdPath:
       name: slotId
       in: path
@@ -887,6 +1027,78 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Timestamp"
             - type: "null"
+
+    # ---- operator ----
+    Machine:
+      type: object
+      required: [machineId, label, type, reservable]
+      additionalProperties: false
+      properties:
+        machineId:
+          $ref: "#/components/schemas/MachineId"
+        label:
+          type: string
+          minLength: 1
+          maxLength: 50
+          examples: [Washer 4]
+        type:
+          $ref: "#/components/schemas/MachineType"
+        reservable:
+          type: boolean
+          description: true if customers can reserve it; false means walk-in only.
+    MachineUpdate:
+      type: object
+      required: [reservable]
+      additionalProperties: false
+      properties:
+        reservable:
+          type: boolean
+    LocalTime:
+      type: string
+      pattern: "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$"
+      description: A wall-clock time HH:MM in the laundromat's time zone; 24:00 means midnight at the end of the day.
+      examples: ["08:00"]
+    CreateSlotsRequest:
+      type: object
+      required: [fromDate, toDate, openTime, closeTime, slotMinutes]
+      additionalProperties: false
+      properties:
+        machineIds:
+          type: array
+          description: The machines to create slots for. Leave it out for every reservable machine.
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/MachineId"
+        fromDate:
+          type: string
+          format: date
+          description: First day, YYYY-MM-DD, in the laundromat's time zone.
+        toDate:
+          type: string
+          format: date
+          description: Last day (included), at most 30 days after fromDate.
+        openTime:
+          $ref: "#/components/schemas/LocalTime"
+        closeTime:
+          $ref: "#/components/schemas/LocalTime"
+        slotMinutes:
+          type: integer
+          enum: [30, 60, 90]
+          description: Length of each slot. Slots run back to back from openTime; the last one ends by closeTime.
+    SlotsCreated:
+      type: object
+      required: [created, skipped]
+      additionalProperties: false
+      properties:
+        created:
+          type: integer
+          minimum: 0
+          description: New slots.
+        skipped:
+          type: integer
+          minimum: 0
+          description: Slots left out because they already existed or had already started.
 
     # ---- errors ----
     Error:

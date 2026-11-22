@@ -157,7 +157,16 @@ def test_worker_and_operator_routes_on_postgres(uow_factory, db_session, client,
     response = client.post(f"/reservations/res_{future.id}/check-in", headers=operator_headers)
     assert response.status_code == 200
     assert response.json()["checkedInAt"]
-    operator_view = client.get(f"/operator/laundromats/lm_{laundromat.id}/today", headers=operator_headers)
+    location = f"/operator/laundromats/lm_{laundromat.id}"
+    # Switching machines to walk-in only stops new holds, while their existing bookings stay on Today.
+    switch = client.patch(
+        f"{location}/machines/mch_{checked_slot.machine_id}",
+        headers=operator_headers,
+        json={"reservable": False},
+    )
+    assert switch.status_code == 200
+    assert switch.json()["reservable"] is False
+    operator_view = client.get(f"{location}/today", headers=operator_headers)
     assert operator_view.status_code == 200
     rows = operator_view.json()["reservations"]
     assert [r["reservationId"] for r in rows] == [f"res_{due.id}", f"res_{present.id}"]

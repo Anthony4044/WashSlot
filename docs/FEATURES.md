@@ -141,7 +141,21 @@ What is **on `main` today**, how to try it, and where the code lives. Owners are
 
 ---
 
-## 11. Today view, check-in and no-shows (US-7.2)
+## 11. Operator manages machines and slots (US-7.1)
+
+**What:** An operator (scope `operator:manage`) switches each of their machines between **reservable** and **walk-in only**, and creates slots for a date range: dates, daily opening hours and slot length, in the laundromat's time zone. Switching a machine off stops new holds (`409 slot_unavailable`) and hides it from the grid; bookings already made stay valid. Existing or already-started slots are skipped, so creating again is safe. Another operator's laundromat or machine is `404`; a customer gets `403`.
+
+| How to test (browser) | How to test (API / pytest) | Where in code |
+|---|---|---|
+| Log in as `operator@example.com` / `operator123` → **Operator** in the nav → flip a switch, then **Create slots** | `GET /operator/laundromats`, `GET …/{id}/machines`, `PATCH …/machines/{machineId}`, `POST …/{id}/slots` | Service: `app/services/operator.py` (ownership check on every use case) |
+| Switch a machine off → it disappears from that laundromat's slot grid | `pytest tests/test_domain_operator.py tests/test_service_operator.py tests/test_operator_api.py` | Domain: `Laundromat.is_run_by`, `Machine.set_reservable`, `SlotSchedule` (`app/domain/schedule.py`), `MachineSlot.is_available` |
+| Log in as Alice → no Operator link; `/operator` says operators only | Conformance: `tests/conformance/test_operator.py` (needs the seeded operator) | UI: `pages/OperatorPage.jsx`, `operator.js` |
+
+**Demo line:** “The scope says *you are an operator*; the service checks *of which laundromat*. Operator 1 asking for laundromat 2 gets a 404, as if it didn't exist.”
+
+---
+
+## 12. Today view, check-in and no-shows (US-7.2)
 
 1. Start the API, frontend and `python worker.py`. On a development database, seed users first
    and then seed laundromats so the demo operator is assigned to the seeded locations.
@@ -164,6 +178,8 @@ booking returns `409 already_cancelled`.
 
 Run `python -m pytest tests/test_check_in.py` from `backend/` for the deadline and persistence
 tests. The [backend test guide](../backend/README.md#contract-and-conformance) covers live HTTP tests.
+
+---
 
 ## End-to-end happy path (all features)
 

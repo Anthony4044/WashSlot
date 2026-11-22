@@ -4,6 +4,7 @@ from typing import Literal
 
 from app.domain.enums import MachineType, ReservationStatus
 from app.domain.laundromat import Laundromat
+from app.domain.machine import Machine
 from app.domain.slot import Reservation, SlotDetails
 from app.services.dto import Dto
 from app.services.ids import HOLD, LAUNDROMAT, MACHINE, RESERVATION, SLOT, format_id
@@ -18,15 +19,6 @@ class LaundromatDto(Dto):
 
 class LaundromatListDto(Dto):
     laundromats: list[LaundromatDto]
-
-
-def laundromat_dto(laundromat: Laundromat) -> LaundromatDto:
-    return LaundromatDto(
-        laundromat_id=format_id(LAUNDROMAT, laundromat.id),
-        name=laundromat.name,
-        address=laundromat.address,
-        timezone=laundromat.timezone,
-    )
 
 
 class TodayBookingDto(Dto):
@@ -97,6 +89,22 @@ class ReservationListDto(Dto):
     reservations: list[ReservationDto]
 
 
+class MachineDto(Dto):
+    machine_id: str
+    label: str
+    type: MachineType
+    reservable: bool
+
+
+class MachineListDto(Dto):
+    machines: list[MachineDto]
+
+
+class SlotsCreatedDto(Dto):
+    created: int
+    skipped: int  # already existed, or already started
+
+
 def _where_and_when(details: SlotDetails) -> dict:
     return {
         "slot_id": format_id(SLOT, details.slot_id),
@@ -119,3 +127,12 @@ def reservation_dto(r: Reservation, details: SlotDetails) -> ReservationDto:
     return ReservationDto(reservation_id=format_id(RESERVATION, r.id), status=r.status,
                           confirmation_email=r.confirmation_email, created_at=r.created_at,
                           checked_in_at=r.checked_in_at, **_where_and_when(details))
+
+
+def laundromat_dto(lm: Laundromat) -> LaundromatDto:
+    return LaundromatDto(laundromat_id=format_id(LAUNDROMAT, lm.id), name=lm.name, address=lm.address,
+                         timezone=lm.timezone)
+
+
+def machine_dto(m: Machine) -> MachineDto:
+    return MachineDto(machine_id=format_id(MACHINE, m.id), label=m.label, type=m.type, reservable=m.reservable)

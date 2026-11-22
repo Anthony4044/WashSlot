@@ -10,6 +10,7 @@ from typing import Protocol
 from app.domain.availability import SlotAvailabilityRow
 from app.domain.idempotency import IdempotencyRecord
 from app.domain.laundromat import Laundromat, TodayBooking
+from app.domain.machine import Machine
 from app.domain.notification import OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
@@ -37,15 +38,22 @@ class SlotRepository(Protocol):
         """The caller's reservations with where/when, newest first (by id). Read model."""
         ...
 
+    def create_many(self, new_slots: list[tuple[int, datetime, datetime]]) -> int:
+        """Operator tool (US-7.1): add (machine_id, start, end) slots, skipping any that already
+        exist (same machine, same start). Returns how many were really added."""
+        ...
+
 
 class LaundromatRepository(Protocol):
     def list_all(self) -> list[Laundromat]:
         """Every laundromat, ordered by name."""
         ...
 
-    def get(self, laundromat_id: int) -> Laundromat | None: ...
+    def list_for_operator(self, user_id: int) -> list[Laundromat]:
+        """The laundromats this user operates, ordered by name (US-7.1)."""
+        ...
 
-    def list_for_operator(self, operator_id: int) -> list[Laundromat]: ...
+    def get(self, laundromat_id: int) -> Laundromat | None: ...
 
     def bookings_for_day(self, laundromat_id: int, day_start: datetime, day_end: datetime) -> list[TodayBooking]: ...
 
@@ -101,12 +109,27 @@ class IdempotencyRepository(Protocol):
         ...
 
 
+class MachineRepository(Protocol):
+    """Machines as the operator manages them (US-7.1)."""
+
+    def list_for_laundromat(self, laundromat_id: int) -> list[Machine]:
+        """Every machine of the laundromat, reservable or not, ordered by label."""
+        ...
+
+    def get(self, machine_id: int) -> Machine | None: ...
+
+    def save(self, machine: Machine) -> None:
+        """Write back the reservable switch."""
+        ...
+
+
 class UnitOfWork(Protocol):
     slots: SlotRepository
     laundromats: LaundromatRepository
     users: UserRepository
     outbox: OutboxRepository
     idempotency: IdempotencyRepository
+    machines: MachineRepository
 
     def __enter__(self) -> "UnitOfWork": ...
     def __exit__(self, exc_type, exc, tb) -> None: ...
