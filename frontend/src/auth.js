@@ -41,6 +41,31 @@ export function isLoggedIn() {
   return Boolean(getToken())
 }
 
+/**
+ * The scopes in the stored token, e.g. ["reservations:read", "operator:manage"].
+ *
+ * Display only (which links and pages to show): anyone can read a JWT's payload without a key,
+ * and the server checks the signature and the scope on every request anyway (403 if missing).
+ */
+export function getScopes() {
+  const token = getToken()
+  if (!token) {
+    return []
+  }
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const claims = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')))
+    return typeof claims.scope === 'string' ? claims.scope.split(' ').filter(Boolean) : []
+  } catch {
+    return []
+  }
+}
+
+/** True when the token carries operator:manage (US-7.1): show the operator pages. */
+export function isOperator() {
+  return getScopes().includes('operator:manage')
+}
+
 export function subscribe(listener) {
   listeners.add(listener)
   return () => listeners.delete(listener)

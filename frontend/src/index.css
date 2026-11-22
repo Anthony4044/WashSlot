@@ -590,3 +590,121 @@ a.reservation-main-link:hover .reservation-where {
   text-decoration: line-through;
   color: var(--muted);
 }
+
+/* Operator: machines and slots (US-7.1) */
+
+.operator-page {
+  max-width: 760px;
+  margin: 0 auto;
+  border-style: solid;
+}
+
+.operator-heading {
+  margin: 1.6rem 0 0.3rem;
+  font-size: 1.15rem;
+}
+
+.operator-pick {
+  max-width: 320px;
+  margin: 0.6rem 0 0.4rem;
+}
+
+.field select {
+  font: inherit;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+}
+
+.field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+}
+
+.machine-list {
+  list-style: none;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.machine-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.machine-error {
+  flex-basis: 100%;
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.switch input {
+  appearance: none;
+  position: relative;
+  width: 2.6rem;
+  height: 1.45rem;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--line);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.switch input::after {
+  content: "";
+  position: absolute;
+  top: 0.18rem;
+  left: 0.18rem;
+  width: 1.09rem;
+  height: 1.09rem;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(26, 36, 34, 0.25);
+  transition: transform 0.15s;
+}
+
+.switch input:checked {
+  background: var(--accent);
+}
+
+.switch input:checked::after {
+  transform: translateX(1.15rem);
+}
+
+.switch input:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.switch input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.slots-form {
+  margin-top: 0.8rem;
+}
