@@ -64,6 +64,21 @@ class OutboxMessage:
             return
         self.next_attempt_at = now + RETRY_DELAYS[self.attempts - 1]
 
+    def retry(self, now: datetime) -> bool:
+        """An operator asks to send a FAILED email again (US-7.3): a fresh start, due now.
+
+        attempts goes back to 0, so it gets MAX_ATTEMPTS new tries with the same backoff as the first
+        time. last_error stays until the next try replaces it, so the operator still sees why it failed.
+        Anything not FAILED is left alone (idempotent): PENDING is already on its way, SENT already
+        arrived, and sending it again would email the customer twice. Returns True if it changed.
+        """
+        if self.status != OutboxStatus.FAILED:
+            return False
+        self.status = OutboxStatus.PENDING
+        self.attempts = 0
+        self.next_attempt_at = now
+        return True
+
 
 def confirmation_email(reservation: Reservation, details: SlotDetails, laundromat_address: str,
                        timezone: str, now: datetime) -> OutboxMessage:

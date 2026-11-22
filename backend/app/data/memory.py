@@ -229,6 +229,17 @@ class MemoryOutboxRepository:
     def save(self, message: OutboxMessage) -> None:
         self.messages[message.id] = copy.deepcopy(message)
 
+    def get(self, message_id: int, *, lock: bool = False) -> OutboxMessage | None:
+        message = self.messages.get(message_id)
+        return copy.deepcopy(message) if message else None
+
+    def list_for_laundromats(self, laundromat_ids: list[int], status: OutboxStatus | None,
+                             limit: int) -> list[OutboxMessage]:
+        mine = [m for m in self.messages.values()
+                if m.laundromat_id in laundromat_ids and (status is None or m.status == status)]
+        mine.sort(key=lambda m: (m.created_at, m.id), reverse=True)
+        return [copy.deepcopy(m) for m in mine[:limit]]
+
 
 class MemoryMachineRepository:
     """Same behaviour as SqlMachineRepository."""

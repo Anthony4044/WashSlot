@@ -1,4 +1,4 @@
-"""Operator endpoints for managing machines and slots and viewing today's bookings.
+"""Operator endpoints: machines and slots, today's bookings, and failed emails.
 
 Thin interface: the scope check is a dependency (no token -> 401, a customer's token -> 403), then
 parse and call the service. WHICH laundromat the operator may touch is decided in the service.
@@ -12,10 +12,19 @@ from app.api.responses import to_response
 from app.api.schemas.errors import ErrorResponse
 from app.api.schemas.operator import CreateSlotsRequest, MachineUpdateRequest
 from app.api.security import CurrentUser, require_scope
-from app.services.ids import LAUNDROMAT, MACHINE, parse_id
+from app.domain.enums import OutboxStatus
+from app.services.ids import LAUNDROMAT, MACHINE, NOTIFICATION, parse_id
 from app.services.operator import OperatorService
 from app.services.unit_of_work import UnitOfWorkFactory
-from app.services.views import LaundromatListDto, MachineDto, MachineListDto, SlotsCreatedDto, TodayBookingsDto
+from app.services.views import (
+    LaundromatListDto,
+    MachineDto,
+    MachineListDto,
+    NotificationDto,
+    NotificationListDto,
+    SlotsCreatedDto,
+    TodayBookingsDto,
+)
 
 router = APIRouter(prefix="/operator", tags=["operator"])
 
@@ -79,3 +88,18 @@ def create_slots(laundromat_id: str, user: Operator, body: CreateSlotsRequest, s
         slot_minutes=body.slot_minutes, machine_ids=machine_ids,
     )
     return to_response(outcome)
+
+
+@router.get("/notifications", operation_id="listOperatorNotifications", response_model=NotificationListDto,
+            responses={**AUTH_ERRORS, 422: {"model": ErrorResponse}},
+            summary="List the confirmation emails of my laundromats")
+def list_notifications(user: Operator, service: Service, status: OutboxStatus | None = None):
+    """Safe. Only the caller's laundromats; ?status=FAILED for the ones the worker gave up on."""
+    return to_response(service.list_notifications(user.id, status))
+
+
+@router.post("/notifications/{notification_id}/retry", operation_id="retryNotification",
+             response_model=NotificationDto, responses=OWNED_ERRORS, summary="Send a failed email again")
+def retry_notification(notification_id: str, user: Operator, service: Service):
+    """Idempotent: PENDING or SENT is returned unchanged. Another operator's email is 404 not_found."""
+    return to_response(service.retry_notification(user.id, parse_id(NOTIFICATION, notification_id)))

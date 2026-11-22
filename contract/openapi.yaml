@@ -13,8 +13,8 @@ info:
 
 
     Conventions: JSON is camelCase. Ids are a prefix plus an opaque number (lm_3, mch_12, slot_1842,
-    hold_7251, res_7251, usr_9) and promise nothing but uniqueness; a malformed or wrong-prefix id is
-    404 not_found. Lists are wrapped in an object. Times are RFC 3339 with an offset.
+    hold_7251, res_7251, usr_9, ntf_31) and promise nothing but uniqueness; a malformed or
+    wrong-prefix id is 404 not_found. Lists are wrapped in an object. Times are RFC 3339 with an offset.
 
 
     Errors: every error body is {"error": "<code>"}. 4xx means fix the request and do not retry it as
@@ -635,6 +635,78 @@ paths:
         default:
           $ref: "#/components/responses/ServerError"
 
+  /operator/notifications:
+    get:
+      operationId: listOperatorNotifications
+      tags: [operator]
+      summary: List the confirmation emails of my laundromats
+      description: >
+        The confirmation emails owed to customers of the caller's laundromats, newest first (at most
+        100). Pass status=FAILED for the ones the worker gave up on; without status, every status is
+        listed. Another operator's emails are never included. Safe: it changes nothing.
+      security:
+        - bearerAuth: ["operator:manage"]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Only the emails with this status.
+          schema:
+            $ref: "#/components/schemas/NotificationStatus"
+      responses:
+        "200":
+          description: The emails, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notifications]
+                additionalProperties: false
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Notification"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /operator/notifications/{notificationId}/retry:
+    post:
+      operationId: retryNotification
+      tags: [operator]
+      summary: Send a failed email again
+      description: >
+        Puts a FAILED email back in the queue: status PENDING, attempts 0, due now. The worker sends
+        it within seconds, with the same retries and backoff as the first time. Idempotent: an email
+        that is already PENDING or SENT is returned unchanged, so a double click or a timed-out
+        caller's retry never sends it twice. No request body. An email of another operator's
+        laundromat is 404 not_found.
+      security:
+        - bearerAuth: ["operator:manage"]
+      parameters:
+        - $ref: "#/components/parameters/NotificationIdPath"
+      responses:
+        "200":
+          description: The email as it is now (PENDING after a retry).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/ServerError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -679,6 +751,12 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/ReservationId"
+    NotificationIdPath:
+      name: notificationId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/NotificationId"
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -814,6 +892,10 @@ components:
       type: string
       pattern: "^usr_[1-9][0-9]*$"
       examples: [usr_9]
+    NotificationId:
+      type: string
+      pattern: "^ntf_[1-9][0-9]*$"
+      examples: [ntf_31]
 
     # ---- shared values ----
     Email:
@@ -1099,6 +1181,67 @@ components:
           type: integer
           minimum: 0
           description: Slots left out because they already existed or had already started.
+    NotificationStatus:
+      type: string
+      enum: [PENDING, SENT, FAILED]
+      description: >
+        PENDING: waiting to be sent, or to be tried again at nextAttemptAt. SENT: the email service
+        accepted it. FAILED: the worker gave up (6 failed tries, or the email service refused the
+        email); an operator may retry it.
+    Notification:
+      type: object
+      description: A confirmation email owed to a customer, and how sending it went.
+      required: [notificationId, reservationId, laundromatId, laundromatName, timezone, recipient,
+                 machineLabel, startTime, endTime, status, attempts, lastError, nextAttemptAt,
+                 sentAt, createdAt]
+      additionalProperties: false
+      properties:
+        notificationId:
+          $ref: "#/components/schemas/NotificationId"
+        reservationId:
+          $ref: "#/components/schemas/ReservationId"
+        laundromatId:
+          $ref: "#/components/schemas/LaundromatId"
+        laundromatName:
+          type: string
+          minLength: 1
+        timezone:
+          type: string
+          description: The laundromat's IANA time zone, to show startTime and endTime in.
+          examples: [America/Toronto]
+        recipient:
+          $ref: "#/components/schemas/Email"
+          description: The address the customer gave for the confirmation.
+        machineLabel:
+          type: string
+          minLength: 1
+        startTime:
+          $ref: "#/components/schemas/Timestamp"
+        endTime:
+          $ref: "#/components/schemas/Timestamp"
+        status:
+          $ref: "#/components/schemas/NotificationStatus"
+        attempts:
+          type: integer
+          minimum: 0
+          description: Tries so far, counted from when the email was created or last retried.
+        lastError:
+          description: Why the last try failed, as the email service said it, or null.
+          oneOf:
+            - type: string
+            - type: "null"
+        nextAttemptAt:
+          description: For a PENDING email, the time it is sent or tried again; null otherwise.
+          oneOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+        sentAt:
+          description: When the email service accepted it, or null.
+          oneOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
 
     # ---- errors ----
     Error:
