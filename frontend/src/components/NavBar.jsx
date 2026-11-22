@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { clearToken, isLoggedIn, subscribe } from '../auth.js'
+import { clearToken, isLoggedIn, isOperator, subscribe } from '../auth.js'
 
 function Logo() {
   return (
@@ -21,6 +21,7 @@ function navClass({ isActive }) {
 export function NavBar() {
   const navigate = useNavigate()
   const loggedIn = useSyncExternalStore(subscribe, isLoggedIn, () => false)
+  const operator = useSyncExternalStore(subscribe, isOperator, () => false)
 
   function logout() {
     clearToken()
@@ -43,6 +44,11 @@ export function NavBar() {
         <NavLink to="/reservations" className={navClass}>
           My reservations
         </NavLink>
+        {operator && (
+          <NavLink to="/operator" className={navClass}>
+            Operator
+          </NavLink>
+        )}
         {loggedIn ? (
           <button type="button" className="nav-link nav-button" onClick={logout}>
             Logout
