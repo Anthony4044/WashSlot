@@ -6,7 +6,10 @@
 
 Ownership is checked here: someone else's reservation is `not_found`, so we never reveal it exists.
 """
+from datetime import UTC
+
 from app.domain.errors import DomainError
+from app.domain.slot import CHECK_IN_GRACE_PERIOD
 from app.services.outcome import Outcome
 from app.services.unit_of_work import UnitOfWorkFactory
 from app.services.views import ReservationListDto, reservation_dto
@@ -71,3 +74,18 @@ class ReservationService:
         except DomainError as refused:
             return Outcome.failure(refused.code)
         return Outcome.success(reservation_dto(checked_in, details))
+
+    def mark_no_shows(self) -> int:
+        with self.uow_factory() as uow:
+            started_by = uow.slots.now().astimezone(UTC) - CHECK_IN_GRACE_PERIOD
+            candidate_ids = uow.slots.no_show_candidate_ids(started_by)
+
+        count = 0
+        for slot_id in candidate_ids:
+            # Recheck under the same lock as check-in. Each slot gets its own short transaction.
+            with self.uow_factory() as uow:
+                slot = uow.slots.get(slot_id, lock=True)
+                if slot is not None and slot.mark_no_show(uow.slots.now()):
+                    uow.slots.save(slot)
+                    count += 1
+        return count

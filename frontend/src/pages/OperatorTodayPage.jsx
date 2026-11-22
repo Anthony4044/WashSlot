@@ -76,7 +76,7 @@ function TodayBookings({ laundromat }) {
                   <span>{booking.customerEmail}</span>
                   <span className={`reservation-status status-${booking.status.toLowerCase()}`}>
                     {booking.status === 'NO_SHOW'
-                      ? 'No-show'
+                      ? 'No-show · Released to walk-ins'
                       : booking.checkedInAt
                         ? `Checked in at ${formatSlotHour(booking.checkedInAt, timezone)}`
                         : 'Awaiting check-in'}

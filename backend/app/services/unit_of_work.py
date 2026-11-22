@@ -24,6 +24,10 @@ class SlotRepository(Protocol):
         """Worker job (US-5.1): every HELD past its expiry becomes EXPIRED. Returns how many."""
         ...
 
+    def no_show_candidate_ids(self, started_by: datetime) -> list[int]:
+        """Slots started by the cutoff that have a confirmed booking without an arrival."""
+        ...
+
     def details(self, slot_id: int) -> SlotDetails | None:
         """Read-only: the slot's laundromat, machine and times, for building responses."""
         ...

@@ -188,6 +188,20 @@ class MachineSlot:
             reservation.checked_in_at = now
         return reservation
 
+    def mark_no_show(self, now: datetime) -> bool:
+        """Release an unattended booking once its grace period ends."""
+        if now < self.check_in_deadline:
+            return False
+        reservation = self.active_reservation(now)
+        if (
+            reservation is None
+            or reservation.status != ReservationStatus.CONFIRMED
+            or reservation.checked_in_at is not None
+        ):
+            return False
+        reservation.status = ReservationStatus.NO_SHOW
+        return True
+
 
 @dataclass(frozen=True)
 class SlotDetails:

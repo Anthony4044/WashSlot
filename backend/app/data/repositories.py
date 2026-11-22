@@ -107,6 +107,18 @@ class SqlSlotRepository:
         )
         return result.rowcount
 
+    def no_show_candidate_ids(self, started_by: datetime) -> list[int]:
+        return list(self.session.scalars(
+            select(MachineSlotRow.id)
+            .join(ReservationRow, ReservationRow.slot_id == MachineSlotRow.id)
+            .where(
+                MachineSlotRow.start_time <= started_by,
+                ReservationRow.status == ReservationStatus.CONFIRMED,
+                ReservationRow.checked_in_at.is_(None),
+            )
+            .order_by(MachineSlotRow.id)
+        ))
+
     def details(self, slot_id: int) -> SlotDetails | None:
         """One query joining slot -> machine -> laundromat. No lock: nothing is decided on it."""
         row = self.session.execute(

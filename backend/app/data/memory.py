@@ -8,7 +8,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from app.domain.availability import SlotAvailabilityRow
-from app.domain.enums import MachineType, OutboxStatus
+from app.domain.enums import MachineType, OutboxStatus, ReservationStatus
 from app.domain.laundromat import BOOKING_STATUSES, Laundromat, TodayBooking
 from app.domain.notification import CLAIM_LEASE, OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
@@ -55,6 +55,14 @@ class MemorySlotRepository:
         """Same as the SQL UPDATE, using the domain rule on every reservation."""
         now = self._clock()
         return sum(len(slot.expire_stale_holds(now)) for slot in self._slots.values())
+
+    def no_show_candidate_ids(self, started_by: datetime) -> list[int]:
+        return sorted(
+            slot.id for slot in self._slots.values()
+            if slot.start_time <= started_by and any(
+                r.status == ReservationStatus.CONFIRMED and r.checked_in_at is None for r in slot.reservations
+            )
+        )
 
     def details(self, slot_id: int) -> SlotDetails | None:
         return self._details.get(slot_id)
