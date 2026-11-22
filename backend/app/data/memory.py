@@ -8,9 +8,9 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from app.domain.availability import SlotAvailabilityRow
-from app.domain.enums import MachineType, OutboxStatus
+from app.domain.enums import MachineType, OutboxStatus, ReservationStatus
 from app.domain.idempotency import IdempotencyRecord
-from app.domain.laundromat import Laundromat
+from app.domain.laundromat import BOOKING_STATUSES, Laundromat, TodayBooking
 from app.domain.machine import Machine
 from app.domain.notification import CLAIM_LEASE, OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
@@ -83,6 +83,14 @@ class MemorySlotRepository:
         now = self._clock()
         return sum(len(slot.expire_stale_holds(now)) for slot in self._slots.values())
 
+    def no_show_candidate_ids(self, started_by: datetime) -> list[int]:
+        return sorted(
+            slot.id for slot in self._slots.values()
+            if slot.start_time <= started_by and any(
+                r.status == ReservationStatus.CONFIRMED and r.checked_in_at is None for r in slot.reservations
+            )
+        )
+
     def details(self, slot_id: int) -> SlotDetails | None:
         return self._details.get(slot_id)
 
@@ -99,6 +107,14 @@ class MemorySlotRepository:
         pairs.sort(key=lambda item: item[0].id or 0, reverse=True)
         return pairs
 
+    def bookings_for_day(self, laundromat_id: int, day_start: datetime, day_end: datetime):
+        for slot_id, slot in self._slots.items():
+            details = self._details[slot_id]
+            if details.laundromat_id == laundromat_id and day_start <= slot.start_time < day_end:
+                for reservation in slot.reservations:
+                    if reservation.status in BOOKING_STATUSES and reservation.id is not None:
+                        yield reservation, details
+
 
 class MemoryUserRepository:
     def __init__(self):
@@ -108,6 +124,9 @@ class MemoryUserRepository:
     def get_by_email(self, email: str) -> User | None:
         found = next((u for u in self._users.values() if u.email == email), None)
         return replace(found) if found else None
+
+    def email_for(self, user_id: int) -> str:
+        return self._users[user_id].email
 
     def add(self, user: User) -> User | None:
         if any(u.email == user.email for u in self._users.values()):
@@ -119,10 +138,11 @@ class MemoryUserRepository:
 
 
 class MemoryLaundromatRepository:
-    def __init__(self, slots: MemorySlotRepository | None = None):
+    def __init__(self, slots: MemorySlotRepository | None = None, users: MemoryUserRepository | None = None):
         self._laundromats: dict[int, Laundromat] = {}
         self._slot_rows: list[SlotAvailabilityRow] = []
         self._slots = slots  # optional: derive availability from MemorySlotRepository
+        self._users = users
 
     def add(self, laundromat: Laundromat) -> Laundromat:
         """Test setup helper."""
@@ -141,6 +161,20 @@ class MemoryLaundromatRepository:
 
     def get(self, laundromat_id: int) -> Laundromat | None:
         return self._laundromats.get(laundromat_id)
+
+    def bookings_for_day(self, laundromat_id: int, day_start: datetime, day_end: datetime) -> list[TodayBooking]:
+        if self._slots is None or self._users is None:
+            return []
+        bookings = [
+            TodayBooking(
+                reservation_id=reservation.id, machine_label=details.machine_label,
+                start_time=details.start_time, end_time=details.end_time,
+                customer_email=self._users.email_for(reservation.user_id),
+                status=reservation.status, checked_in_at=reservation.checked_in_at,
+            )
+            for reservation, details in self._slots.bookings_for_day(laundromat_id, day_start, day_end)
+        ]
+        return sorted(bookings, key=lambda row: (row.start_time, row.machine_label, row.reservation_id))
 
     def reservable_slots_for_day(
         self, laundromat_id: int, day_start: datetime, day_end: datetime
@@ -262,7 +296,7 @@ class MemoryUnitOfWork:
     ):
         self.slots = slots or MemorySlotRepository()
         self.users = users or MemoryUserRepository()
-        self.laundromats = laundromats or MemoryLaundromatRepository(self.slots)
+        self.laundromats = laundromats or MemoryLaundromatRepository(self.slots, self.users)
         self.outbox = outbox or MemoryOutboxRepository(clock=self.slots.now)  # same clock as the slots
         self.idempotency = idempotency or MemoryIdempotencyRepository(clock=self.slots.now)
         self.machines = machines or MemoryMachineRepository()

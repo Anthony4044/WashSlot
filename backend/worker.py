@@ -11,8 +11,8 @@ so it talks to the database through the service layer, never with its own SQL.
 Adding a job (US-5.2 retention, US-7.2 no-shows, ...): write a function below that takes
 `uow_factory`, then add ONE line to JOBS. Keep both sides when you resolve a merge conflict here.
 
-The app is still correct when the worker is stopped: requests check expiry themselves (lazy
-expiry). The worker only brings the database up to date.
+Requests still enforce hold expiry and the check-in deadline when the worker is stopped.
+The worker persists no-shows so attendants can release the machines to walk-ins.
 """
 import logging
 import time
@@ -24,6 +24,7 @@ from app.data.unit_of_work import SqlAlchemyUnitOfWork
 from app.services.emails import EmailService
 from app.services.holds import HoldService
 from app.services.idempotency import delete_old_records
+from app.services.reservations import ReservationService
 from app.services.unit_of_work import UnitOfWorkFactory
 
 log = logging.getLogger("worker")
@@ -45,6 +46,13 @@ def send_emails(uow_factory: UnitOfWorkFactory) -> None:
         log.info("sent %d email(s)", count)
 
 
+def mark_no_shows(uow_factory: UnitOfWorkFactory) -> None:
+    """US-7.2: unchecked confirmed bookings become NO_SHOW after the 15-minute grace period."""
+    count = ReservationService(uow_factory).mark_no_shows()
+    if count:
+        log.info("marked %d no-show(s)", count)
+
+
 def forget_old_idempotency_keys(uow_factory: UnitOfWorkFactory) -> None:
     """US-5.2: delete Idempotency-Key records older than IDEMPOTENCY_RETENTION_HOURS (at least 24)."""
     count = delete_old_records(uow_factory, get_settings().idempotency_retention_hours)
@@ -55,6 +63,7 @@ def forget_old_idempotency_keys(uow_factory: UnitOfWorkFactory) -> None:
 # (name, function, run every N seconds). Add one line per job.
 JOBS = [
     ("expire holds", expire_holds, 30),
+    ("mark no-shows", mark_no_shows, 30),
     ("send emails", send_emails, 5),
     ("forget old idempotency keys", forget_old_idempotency_keys, 600),
 ]

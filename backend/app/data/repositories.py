@@ -22,7 +22,7 @@ from app.data.tables import (
 from app.domain.availability import SlotAvailabilityRow
 from app.domain.enums import OutboxStatus, ReservationStatus
 from app.domain.idempotency import IdempotencyRecord
-from app.domain.laundromat import Laundromat
+from app.domain.laundromat import BOOKING_STATUSES, Laundromat, TodayBooking
 from app.domain.machine import Machine
 from app.domain.notification import CLAIM_LEASE, OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
@@ -49,8 +49,8 @@ class SqlSlotRepository:
         self.session = session
 
     def now(self) -> datetime:
-        """The database clock: the one authority for expiry decisions (proposal, section 5)."""
-        return self.session.execute(select(func.now())).scalar_one()
+        """Read the database clock after taking any locks, even if the transaction had to wait."""
+        return self.session.execute(select(func.statement_timestamp())).scalar_one()
 
     def get(self, slot_id: int, *, lock: bool = False) -> MachineSlot | None:
         """Load the whole aggregate. lock=True takes SELECT ... FOR UPDATE on the slot row,
@@ -140,6 +140,18 @@ class SqlSlotRepository:
         )
         return result.rowcount
 
+    def no_show_candidate_ids(self, started_by: datetime) -> list[int]:
+        return list(self.session.scalars(
+            select(MachineSlotRow.id)
+            .join(ReservationRow, ReservationRow.slot_id == MachineSlotRow.id)
+            .where(
+                MachineSlotRow.start_time <= started_by,
+                ReservationRow.status == ReservationStatus.CONFIRMED,
+                ReservationRow.checked_in_at.is_(None),
+            )
+            .order_by(MachineSlotRow.id)
+        ))
+
     def details(self, slot_id: int) -> SlotDetails | None:
         """One query joining slot -> machine -> laundromat. No lock: nothing is decided on it."""
         row = self.session.execute(
@@ -210,6 +222,31 @@ class SqlLaundromatRepository:
     def get(self, laundromat_id: int) -> Laundromat | None:
         row = self.session.get(LaundromatRow, laundromat_id)
         return None if row is None else _laundromat(row)
+
+    def bookings_for_day(self, laundromat_id: int, day_start: datetime, day_end: datetime) -> list[TodayBooking]:
+        rows = self.session.execute(
+            select(
+                ReservationRow.id,
+                MachineRow.label,
+                MachineSlotRow.start_time,
+                MachineSlotRow.end_time,
+                UserRow.email,
+                ReservationRow.status,
+                ReservationRow.checked_in_at,
+            )
+            .select_from(ReservationRow)
+            .join(MachineSlotRow, MachineSlotRow.id == ReservationRow.slot_id)
+            .join(MachineRow, MachineRow.id == MachineSlotRow.machine_id)
+            .join(UserRow, UserRow.id == ReservationRow.user_id)
+            .where(
+                MachineRow.laundromat_id == laundromat_id,
+                MachineSlotRow.start_time >= day_start,
+                MachineSlotRow.start_time < day_end,
+                ReservationRow.status.in_(BOOKING_STATUSES),
+            )
+            .order_by(MachineSlotRow.start_time, MachineRow.label, ReservationRow.id)
+        )
+        return [TodayBooking(*row) for row in rows]
 
     def reservable_slots_for_day(
         self, laundromat_id: int, day_start: datetime, day_end: datetime

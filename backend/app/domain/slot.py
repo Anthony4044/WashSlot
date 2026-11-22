@@ -9,12 +9,21 @@ Stories add their use-case methods here (place_hold: US-4.1, confirm: US-4.2, ca
 check_in: US-7.2). Times are always timezone-aware; `now` is passed in (the database clock).
 """
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from app.domain.enums import MachineType, ReservationStatus
-from app.domain.errors import AlreadyCancelled, HoldExpired, NotFound, SlotUnavailable, TooLateToCancel
+from app.domain.errors import (
+    AlreadyCancelled,
+    HoldExpired,
+    NotFound,
+    ReservationNotConfirmed,
+    SlotUnavailable,
+    TooLateToCancel,
+    TooLateToCheckIn,
+)
 
 ACTIVE_STATUSES = (ReservationStatus.HELD, ReservationStatus.CONFIRMED)
+CHECK_IN_GRACE_PERIOD = timedelta(minutes=15)
 
 
 @dataclass
@@ -160,6 +169,41 @@ class MachineSlot:
         r.status = ReservationStatus.CANCELLED
         r.cancelled_at = now
         return r
+
+    @property
+    def check_in_deadline(self) -> datetime:
+        return self.start_time.astimezone(UTC) + CHECK_IN_GRACE_PERIOD
+
+    def check_in(self, reservation_id: int, now: datetime) -> Reservation:
+        """Record the first arrival on a confirmed booking before the deadline."""
+        reservation = self.reservation(reservation_id)
+        if reservation is None:
+            raise NotFound()
+        if reservation.status == ReservationStatus.CANCELLED:
+            raise AlreadyCancelled()
+        if reservation.status == ReservationStatus.NO_SHOW:
+            raise TooLateToCheckIn()
+        if reservation.status != ReservationStatus.CONFIRMED:
+            raise ReservationNotConfirmed()
+        if reservation.checked_in_at is None:
+            if now >= self.check_in_deadline:
+                raise TooLateToCheckIn()
+            reservation.checked_in_at = now
+        return reservation
+
+    def mark_no_show(self, now: datetime) -> bool:
+        """Release an unattended booking once its grace period ends."""
+        if now < self.check_in_deadline:
+            return False
+        reservation = self.active_reservation(now)
+        if (
+            reservation is None
+            or reservation.status != ReservationStatus.CONFIRMED
+            or reservation.checked_in_at is not None
+        ):
+            return False
+        reservation.status = ReservationStatus.NO_SHOW
+        return True
 
 
 @dataclass(frozen=True)

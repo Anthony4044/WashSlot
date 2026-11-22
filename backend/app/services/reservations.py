@@ -2,10 +2,14 @@
 - list mine     GET /me/reservations           (US-4.3)
 - fetch one     GET /reservations/{id}         (US-4.3)
 - cancel        DELETE /reservations/{id}      (US-5.3)
+- check in      POST /reservations/{id}/check-in (US-7.2)
 
 Ownership is checked here: someone else's reservation is `not_found`, so we never reveal it exists.
 """
+from datetime import UTC
+
 from app.domain.errors import DomainError
+from app.domain.slot import CHECK_IN_GRACE_PERIOD
 from app.services.outcome import Outcome
 from app.services.unit_of_work import UnitOfWorkFactory
 from app.services.views import ReservationListDto, reservation_dto
@@ -49,3 +53,39 @@ class ReservationService:
         except DomainError as refused:
             return Outcome.failure(refused.code)
         return Outcome.success(None)
+
+    def check_in(self, user_id: int, reservation_id: int, *, is_operator: bool = False) -> Outcome:
+        """Record arrival for the customer who booked or the operator assigned to the laundromat."""
+        try:
+            with self.uow_factory() as uow:
+                slot = uow.slots.get_for_reservation(reservation_id, lock=True)
+                reservation = slot.reservation(reservation_id) if slot else None
+                if reservation is None or (reservation.user_id != user_id and not is_operator):
+                    return Outcome.failure("not_found")
+                details = uow.slots.details(slot.id)
+                if reservation.user_id != user_id:
+                    laundromat = uow.laundromats.get(details.laundromat_id)
+                    if laundromat is None or not laundromat.is_run_by(user_id):
+                        return Outcome.failure("not_found")
+                already_checked_in = reservation.checked_in_at is not None
+                checked_in = slot.check_in(reservation_id, uow.slots.now())
+                if not already_checked_in:
+                    uow.slots.save(slot)
+        except DomainError as refused:
+            return Outcome.failure(refused.code)
+        return Outcome.success(reservation_dto(checked_in, details))
+
+    def mark_no_shows(self) -> int:
+        with self.uow_factory() as uow:
+            started_by = uow.slots.now().astimezone(UTC) - CHECK_IN_GRACE_PERIOD
+            candidate_ids = uow.slots.no_show_candidate_ids(started_by)
+
+        count = 0
+        for slot_id in candidate_ids:
+            # Recheck under the same lock as check-in. Each slot gets its own short transaction.
+            with self.uow_factory() as uow:
+                slot = uow.slots.get(slot_id, lock=True)
+                if slot is not None and slot.mark_no_show(uow.slots.now()):
+                    uow.slots.save(slot)
+                    count += 1
+        return count

@@ -155,6 +155,32 @@ What is **on `main` today**, how to try it, and where the code lives. Owners are
 
 ---
 
+## 12. Today view, check-in and no-shows (US-7.2)
+
+1. Start the API, frontend and `python worker.py`. On a development database, seed users first
+   and then seed laundromats so the demo operator is assigned to the seeded locations.
+2. In one browser session, log in as `alice@example.com` / `customer123`. Hold and confirm three
+   different slots for today at the same laundromat. On **My reservations**, click **I'm here**
+   for the first booking. Its status should become **Checked in**.
+3. In a second browser session, log in as `operator@example.com` / `operator123`. Open **Today**
+   in the navigation and select the same laundromat. Confirm that the first booking shows the
+   arrival time and that the second says **Awaiting check-in**. Click **Mark present** on the second
+   booking and refresh **My reservations** in the customer session to see **Checked in** there too.
+4. Leave the third booking unchecked. At 15 minutes after the slot starts, allow up to 30 seconds
+   for the worker and click **Refresh bookings**. Expect **No-show · Released to walk-ins**.
+   Refresh **My reservations** to see `NO_SHOW`. The machine is released for in-person walk-ins
+   for the rest of that slot. Online booking for a slot closes when it starts.
+5. In a customer session, open `/operator/today` directly and confirm the site shows a permission error.
+
+Check-in is allowed on a confirmed booking before the cutoff, including before the slot starts.
+At the API, repeating the same check-in preserves its original `checkedInAt`. A cancelled
+booking returns `409 already_cancelled`.
+
+Run `python -m pytest tests/test_check_in.py` from `backend/` for the deadline and persistence
+tests. The [backend test guide](../backend/README.md#contract-and-conformance) covers live HTTP tests.
+
+---
+
 ## End-to-end happy path (all features)
 
 1. Seed: `seed_users.py` + `seed_laundromats.py`

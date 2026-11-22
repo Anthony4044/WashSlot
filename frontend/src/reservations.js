@@ -18,3 +18,7 @@ export function getReservation(reservationId) {
 export function cancelReservation(reservationId) {
   return api(`/reservations/${encodeURIComponent(reservationId)}`, { method: 'DELETE' })
 }
+
+export function checkInReservation(reservationId) {
+  return api(`/reservations/${encodeURIComponent(reservationId)}/check-in`, { method: 'POST' })
+}

@@ -9,7 +9,7 @@ from typing import Protocol
 
 from app.domain.availability import SlotAvailabilityRow
 from app.domain.idempotency import IdempotencyRecord
-from app.domain.laundromat import Laundromat
+from app.domain.laundromat import Laundromat, TodayBooking
 from app.domain.machine import Machine
 from app.domain.notification import OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
@@ -24,6 +24,10 @@ class SlotRepository(Protocol):
 
     def expire_all_stale_holds(self) -> int:
         """Worker job (US-5.1): every HELD past its expiry becomes EXPIRED. Returns how many."""
+        ...
+
+    def no_show_candidate_ids(self, started_by: datetime) -> list[int]:
+        """Slots started by the cutoff that have a confirmed booking without an arrival."""
         ...
 
     def details(self, slot_id: int) -> SlotDetails | None:
@@ -50,6 +54,8 @@ class LaundromatRepository(Protocol):
         ...
 
     def get(self, laundromat_id: int) -> Laundromat | None: ...
+
+    def bookings_for_day(self, laundromat_id: int, day_start: datetime, day_end: datetime) -> list[TodayBooking]: ...
 
     def reservable_slots_for_day(
         self, laundromat_id: int, day_start: datetime, day_end: datetime

@@ -1,5 +1,6 @@
 """DTOs shaped like the contract schemas. Built once and reused by the use cases that return them."""
-from datetime import datetime
+from datetime import date, datetime
+from typing import Literal
 
 from app.domain.enums import MachineType, ReservationStatus
 from app.domain.laundromat import Laundromat
@@ -18,6 +19,21 @@ class LaundromatDto(Dto):
 
 class LaundromatListDto(Dto):
     laundromats: list[LaundromatDto]
+
+
+class TodayBookingDto(Dto):
+    reservation_id: str
+    machine_label: str
+    start_time: datetime
+    end_time: datetime
+    customer_email: str
+    status: Literal[ReservationStatus.CONFIRMED, ReservationStatus.NO_SHOW]
+    checked_in_at: datetime | None
+
+
+class TodayBookingsDto(Dto):
+    date: date
+    reservations: list[TodayBookingDto]
 
 
 class SlotAvailabilityDto(Dto):

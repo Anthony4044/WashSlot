@@ -42,6 +42,8 @@ CATALOG: dict[str, ErrorSpec] = {
     "hold_expired": ErrorSpec(409, False),
     "too_late_to_cancel": ErrorSpec(409, False),
     "already_cancelled": ErrorSpec(409, False),
+    "reservation_not_confirmed": ErrorSpec(409, False),
+    "too_late_to_check_in": ErrorSpec(409, False),
     "email_taken": ErrorSpec(409, False),
     # our fault: the same request may succeed later
     "internal_error": ErrorSpec(500, True),

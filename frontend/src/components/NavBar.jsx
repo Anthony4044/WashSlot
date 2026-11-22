@@ -45,9 +45,14 @@ export function NavBar() {
           My reservations
         </NavLink>
         {operator && (
-          <NavLink to="/operator" className={navClass}>
-            Operator
-          </NavLink>
+          <>
+            <NavLink to="/operator" className={navClass} end>
+              Operator
+            </NavLink>
+            <NavLink to="/operator/today" className={navClass}>
+              Today
+            </NavLink>
+          </>
         )}
         {loggedIn ? (
           <button type="button" className="nav-link nav-button" onClick={logout}>

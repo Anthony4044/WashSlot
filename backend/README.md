@@ -20,11 +20,13 @@ alembic upgrade head                 # build/update the tables in DATABASE_URL
 python scripts/seed_users.py         # demo accounts below (safe to run again; --test seeds TEST_DATABASE_URL)
 python scripts/seed_laundromats.py   # 2 laundromats, machines, next 7 days of slots (--test for TEST_DATABASE_URL)
 uvicorn app.main:app --reload        # http://localhost:8000/docs
-python worker.py                     # second terminal: background jobs (expire holds, send emails, forget old idempotency keys)
+python worker.py                     # second terminal: run background jobs
 ```
 
-The worker is a separate process with a list of jobs (`JOBS` in `worker.py`). The API stays correct
-without it (requests check expiry themselves), but confirmation emails are only sent while it runs.
+The worker is a separate process with a list of jobs (`JOBS` in `worker.py`). It expires holds,
+sends confirmation emails, persists no-shows, and clears idempotency keys after their retention period. Every 30 seconds it marks confirmed bookings that
+have no check-in at least 15 minutes after their start. On **Today**, use **Refresh bookings**
+to see the new status. The API checks the deadline on every first check-in.
 
 Demo accounts (`scripts/seed_users.py`, the only way to create an operator):
 
@@ -55,6 +57,8 @@ CONFORMANCE_BASE_URL=http://localhost:8000 pytest tests/conformance   # terminal
 The conformance tests call the server over HTTP and check every response against `contract/openapi.yaml`.
 They never import `app`. Without `CONFORMANCE_BASE_URL` they are skipped. They register their own users,
 so point the server at your test database, not `neondb`.
+Seed the demo users and then the laundromats in the database used by the conformance server.
+The operator tests use the seeded operator, and the booking tests need some free slots.
 
 **Adding an endpoint:** first add its operation to `contract/openapi.yaml` (copy a similar one), then copy
 `tests/conformance/test_auth.py` for your endpoint: one test per response you can trigger, each ending in

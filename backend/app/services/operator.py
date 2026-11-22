@@ -1,21 +1,32 @@
-"""Operator use cases (US-7.1), in the SERVICE layer:
+"""Operator use cases (US-7.1 and US-7.2), in the SERVICE layer:
 - my laundromats          GET   /operator/laundromats
 - their machines          GET   /operator/laundromats/{id}/machines
 - reservable on/off       PATCH /operator/laundromats/{id}/machines/{machineId}
 - create slots            POST  /operator/laundromats/{id}/slots
+- today's bookings       GET   /operator/laundromats/{id}/today
 
 Ownership is checked HERE, on every use case: the scope (operator:manage) only says "you are an
 operator", not "of which laundromat". Another operator's laundromat, or a machine that isn't in
 this laundromat, is not_found, exactly like an id that doesn't exist: we never reveal it is there.
 """
-from datetime import date
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from app.domain.errors import DomainError
 from app.domain.laundromat import Laundromat
 from app.domain.schedule import SlotSchedule
+from app.services.ids import RESERVATION, format_id
 from app.services.outcome import Outcome
 from app.services.unit_of_work import UnitOfWork, UnitOfWorkFactory
-from app.services.views import LaundromatListDto, MachineListDto, SlotsCreatedDto, laundromat_dto, machine_dto
+from app.services.views import (
+    LaundromatListDto,
+    MachineListDto,
+    SlotsCreatedDto,
+    TodayBookingDto,
+    TodayBookingsDto,
+    laundromat_dto,
+    machine_dto,
+)
 
 
 class OperatorService:
@@ -27,6 +38,33 @@ class OperatorService:
         with self.uow_factory() as uow:
             mine = uow.laundromats.list_for_operator(user_id)
         return Outcome.success(LaundromatListDto(laundromats=[laundromat_dto(lm) for lm in mine]))
+
+    def today(self, user_id: int, laundromat_id: int) -> Outcome:
+        """Confirmed bookings and no-shows for the local calendar day."""
+        with self.uow_factory() as uow:
+            laundromat = _own_laundromat(uow, user_id, laundromat_id)
+            if laundromat is None:
+                return Outcome.failure("not_found")
+            timezone = ZoneInfo(laundromat.timezone)
+            day = uow.slots.now().astimezone(timezone).date()
+            day_start = datetime.combine(day, time.min, timezone)
+            rows = uow.laundromats.bookings_for_day(laundromat_id, day_start, day_start + timedelta(days=1))
+
+        return Outcome.success(TodayBookingsDto(
+            date=day,
+            reservations=[
+                TodayBookingDto(
+                    reservation_id=format_id(RESERVATION, row.reservation_id),
+                    machine_label=row.machine_label,
+                    start_time=row.start_time,
+                    end_time=row.end_time,
+                    customer_email=row.customer_email,
+                    status=row.status,
+                    checked_in_at=row.checked_in_at,
+                )
+                for row in rows
+            ],
+        ))
 
     def list_machines(self, user_id: int, laundromat_id: int) -> Outcome:
         """Every machine of one of the caller's laundromats, reservable or not."""

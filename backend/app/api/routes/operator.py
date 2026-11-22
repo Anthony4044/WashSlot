@@ -1,4 +1,4 @@
-"""Operator endpoints (US-7.1): my laundromats, their machines, the reservable switch, create slots.
+"""Operator endpoints for managing machines and slots and viewing today's bookings.
 
 Thin interface: the scope check is a dependency (no token -> 401, a customer's token -> 403), then
 parse and call the service. WHICH laundromat the operator may touch is decided in the service.
@@ -15,7 +15,7 @@ from app.api.security import CurrentUser, require_scope
 from app.services.ids import LAUNDROMAT, MACHINE, parse_id
 from app.services.operator import OperatorService
 from app.services.unit_of_work import UnitOfWorkFactory
-from app.services.views import LaundromatListDto, MachineDto, MachineListDto, SlotsCreatedDto
+from app.services.views import LaundromatListDto, MachineDto, MachineListDto, SlotsCreatedDto, TodayBookingsDto
 
 router = APIRouter(prefix="/operator", tags=["operator"])
 
@@ -36,6 +36,17 @@ Operator = Annotated[CurrentUser, Depends(require_scope("operator:manage"))]
 def list_my_laundromats(user: Operator, service: Service):
     """Safe. Only the caller's own laundromats."""
     return to_response(service.list_laundromats(user.id))
+
+
+@router.get(
+    "/laundromats/{laundromat_id}/today",
+    operation_id="listTodaysBookings",
+    response_model=TodayBookingsDto,
+    responses=OWNED_ERRORS,
+    summary="List today's bookings for an assigned laundromat",
+)
+def list_todays_bookings(laundromat_id: str, user: Operator, service: Service):
+    return to_response(service.today(user.id, parse_id(LAUNDROMAT, laundromat_id)))
 
 
 @router.get("/laundromats/{laundromat_id}/machines", operation_id="listOperatorMachines",

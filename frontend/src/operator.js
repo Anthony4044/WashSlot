@@ -8,6 +8,11 @@ export function listMyLaundromats() {
   return api('/operator/laundromats')
 }
 
+/** GET /operator/laundromats/:id/today. Returns the bookings for the laundromat's local day. */
+export function listTodaysBookings(laundromatId) {
+  return api(`${lm(laundromatId)}/today`)
+}
+
 /** GET /operator/laundromats/:id/machines. Resolves to { machines: [{ machineId, label, type, reservable }] }. */
 export function listMachines(laundromatId) {
   return api(`${lm(laundromatId)}/machines`)
