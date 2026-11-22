@@ -52,6 +52,9 @@ export function NavBar() {
             <NavLink to="/operator/today" className={navClass}>
               Today
             </NavLink>
+            <NavLink to="/operator/notifications" className={navClass}>
+              Emails
+            </NavLink>
           </>
         )}
         {loggedIn ? (

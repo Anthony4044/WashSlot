@@ -729,3 +729,47 @@ a.reservation-main-link:hover .reservation-where {
 .slots-form {
   margin-top: 0.8rem;
 }
+
+/* Operator: confirmation emails (US-7.3) */
+
+.notifications-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin-top: 1rem;
+}
+
+.notifications-toolbar .field {
+  min-width: 200px;
+}
+
+.notifications-empty {
+  margin: 1.2rem 0 0;
+  color: var(--muted);
+}
+
+.notification-item {
+  overflow-wrap: anywhere;
+}
+
+.notification-error {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.status-failed {
+  color: #8a1f1f;
+  background: rgba(138, 31, 31, 0.12);
+  border: 1px solid rgba(138, 31, 31, 0.35);
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+}
+
+.status-pending {
+  color: var(--focus);
+}
+
+.status-sent {
+  color: var(--accent-ink);
+}
