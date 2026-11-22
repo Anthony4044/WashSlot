@@ -57,6 +57,8 @@ CONFORMANCE_BASE_URL=http://localhost:8000 pytest tests/conformance   # terminal
 The conformance tests call the server over HTTP and check every response against `contract/openapi.yaml`.
 They never import `app`. Without `CONFORMANCE_BASE_URL` they are skipped. They register their own users,
 so point the server at your test database, not `neondb`.
+Seed the demo users and then the laundromats in the database used by the conformance server.
+The operator tests use the seeded operator, and the booking tests need some free slots.
 
 **Adding an endpoint:** first add its operation to `contract/openapi.yaml` (copy a similar one), then copy
 `tests/conformance/test_auth.py` for your endpoint: one test per response you can trigger, each ending in
