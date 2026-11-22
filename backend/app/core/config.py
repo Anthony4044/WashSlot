@@ -2,10 +2,11 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+MIN_IDEMPOTENCY_RETENTION_HOURS = 24  # contract: Idempotency-Key "kept for at least 24 hours"
 
 
 def to_sqlalchemy_url(url: str) -> str:
@@ -37,7 +38,9 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173"
     hold_minutes: int = 10
-    idempotency_retention_hours: int = 24  # promised in the contract
+    # The contract promises keys are kept AT LEAST 24 hours, so a smaller value is refused at startup.
+    idempotency_retention_hours: int = Field(default=MIN_IDEMPOTENCY_RETENTION_HOURS,
+                                             ge=MIN_IDEMPOTENCY_RETENTION_HOURS)
 
     @field_validator("jwt_private_key_file", "jwt_public_key_file")
     @classmethod

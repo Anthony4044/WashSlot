@@ -20,7 +20,7 @@ alembic upgrade head                 # build/update the tables in DATABASE_URL
 python scripts/seed_users.py         # demo accounts below (safe to run again; --test seeds TEST_DATABASE_URL)
 python scripts/seed_laundromats.py   # 2 laundromats, machines, next 7 days of slots (--test for TEST_DATABASE_URL)
 uvicorn app.main:app --reload        # http://localhost:8000/docs
-python worker.py                     # second terminal: background jobs (expire holds, send emails)
+python worker.py                     # second terminal: background jobs (expire holds, send emails, forget old idempotency keys)
 ```
 
 The worker is a separate process with a list of jobs (`JOBS` in `worker.py`). The API stays correct

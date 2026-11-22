@@ -7,22 +7,24 @@ How the race is made: Listing 7.3's pattern. Each customer runs in its own threa
 threading.Barrier holds every thread at the starting line until all of them are ready. Then they all
 go at once, so their transactions really overlap.
 
-Two tests, like the lecture's demo (race.py "pessimistic" vs "unsafe"):
+Three tests, two of them like the lecture's demo (race.py "pessimistic" vs "unsafe"):
 1. With the lock (the real code): exactly one 201, everyone else 409 slot_unavailable, one row.
-2. Lock switched off (control group): the data is still safe, thanks to the database's partial unique
+2. US-5.2: ONE customer sends the same request 8 times at once (same Idempotency-Key): one hold,
+   and the 7 copies get it replayed (201, Idempotency-Replayed: true), never a 409 or a second hold.
+3. Lock switched off (control group): the data is still safe, thanks to the database's partial unique
    index, but the losers crash with a database error instead of getting a clean 409.
    The constraint is the safety net; the lock is what makes the answers right.
 """
 import threading
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import get_uow_factory
 from app.data.database import make_session_factory
 from app.data.repositories import SqlSlotRepository
-from app.data.tables import ReservationRow
+from app.data.tables import IdempotencyRecordRow, ReservationRow
 from app.data.unit_of_work import SqlAlchemyUnitOfWork
 from app.domain.enums import ReservationStatus
 from app.main import app
@@ -120,7 +122,40 @@ def test_twenty_customers_click_hold_on_the_same_slot_at_once(racing_client, db_
     assert winner.json()["holdId"] == f"hold_{rows[0].id}"
 
 
-# --- 2. control group: the same race with the lock switched off -------------------------------
+# --- 2. one customer, one attempt, eight copies at once (US-5.2) --------------------------------
+
+CLICKS = 8
+
+
+def test_eight_parallel_clicks_with_the_same_key_give_one_hold_and_seven_replays(racing_client, db_session,
+                                                                                bearer):
+    """A double-clicking customer, or a client that retries while the first request is still running.
+
+    All 8 copies miss the "is this key known?" check together. Then the slot lock lines them up: the
+    first one holds the slot and inserts the key's record; each later one finds the slot taken, tries
+    to insert the same key, gets 0 rows (the first one's record is there), rolls back its own work and
+    replays the stored 201. So the customer gets the same hold 8 times, and the slot is held once.
+    """
+    slot = make_slot(db_session)
+    [(user_id, email)] = make_customers(db_session, 1)
+    headers = {**bearer(user_id), "Idempotency-Key": "double-click-attempt-0001"}  # the SAME key every time
+
+    responses = race(CLICKS, lambda i: racing_client.post(
+        f"/slots/slot_{slot.id}/holds", json={"confirmationEmail": email}, headers=headers))
+
+    crashed = [r for r in responses if isinstance(r, Exception)]
+    assert not crashed, f"{len(crashed)} requests crashed, e.g. {crashed[0]!r}"
+    assert [r.status_code for r in responses] == [201] * CLICKS  # nobody saw a 409: they all got the hold
+    replayed = [r for r in responses if r.headers.get("Idempotency-Replayed") == "true"]
+    assert len(replayed) == CLICKS - 1  # one real hold, seven replays of it
+    assert len({r.json()["holdId"] for r in responses}) == 1  # all eight point at the same hold
+
+    rows = rows_for(db_session, slot.id)
+    assert [r.status for r in rows] == [ReservationStatus.HELD]  # and the database holds the slot once
+    assert db_session.scalar(select(func.count()).select_from(IdempotencyRecordRow)) == 1
+
+
+# --- 3. control group: the same race with the lock switched off -------------------------------
 
 def test_without_the_lock_only_the_unique_index_prevents_a_double_booking(racing_uow_factory, db_session,
                                                                           monkeypatch):
@@ -141,7 +176,7 @@ def test_without_the_lock_only_the_unique_index_prevents_a_double_booking(racing
 
     def place_hold(i: int):
         user_id, email = customers[i]
-        return service.place_hold(user_id, slot.id, email)
+        return service.place_hold(user_id, slot.id, email, f"control-attempt-{i:02d}")  # one attempt each
 
     results = race(N, place_hold)
 

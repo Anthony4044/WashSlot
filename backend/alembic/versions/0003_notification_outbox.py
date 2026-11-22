@@ -1,11 +1,7 @@
 """notification_outbox: emails waiting to be sent by the worker (US-6.1).
 
-Merge note: migration 0002 (idempotency_records, US-5.2) is not merged yet, so this one sits on
-0001 for now. Whichever of the two PRs merges second changes the other's place in the chain:
-0003's down_revision becomes "0002". Then `alembic heads` shows one head again.
-
 Revision ID: 0003
-Revises: 0001
+Revises: 0002
 Create Date: 2026-11-21
 """
 from collections.abc import Sequence
@@ -15,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0003"
-down_revision: str | None = "0001"  # becomes "0002" once US-5.2 is merged
+down_revision: str | None = "0002"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -78,6 +78,40 @@ def test_a_bad_body_is_422_invalid_request(api, customer, body):
     check_error(hold(api, UNKNOWN, as_customer(customer), body), PLACE_HOLD, "post", 422, "invalid_request")
 
 
+# --- safe retries: the same Idempotency-Key again (US-5.2) -------------------------------------
+
+def test_a_retry_with_the_same_key_replays_the_404(api, customer):
+    headers = as_customer(customer)  # one key, used for both tries
+    check_error(hold(api, UNKNOWN, headers), PLACE_HOLD, "post", 404, "not_found")
+
+    retry = hold(api, UNKNOWN, headers)
+
+    check_error(retry, PLACE_HOLD, "post", 404, "not_found")  # check() also allows the header here
+    assert retry.headers["Idempotency-Replayed"] == "true"
+
+
+def test_the_same_key_with_another_body_is_422_reuse(api, customer):
+    headers = as_customer(customer)
+    hold(api, UNKNOWN, headers, {"confirmationEmail": "me@example.com"})
+
+    reused = hold(api, UNKNOWN, headers, {"confirmationEmail": "someone.else@example.com"})
+
+    check_error(reused, PLACE_HOLD, "post", 422, "idempotency_key_reuse")
+
+
+def test_a_retry_of_a_hold_replays_it_instead_of_holding_twice(api, customer):
+    slot_id = find_free_slot(api)
+    headers, body = as_customer(customer), {"confirmationEmail": customer["email"]}
+
+    first = hold(api, slot_id, headers, body)
+    retry = hold(api, slot_id, headers, body)  # as if the first response had been lost
+
+    assert (first.status_code, retry.status_code) == (201, 201)
+    assert check(retry, PLACE_HOLD, "post") == check(first, PLACE_HOLD, "post")  # the very same hold
+    assert retry.headers["Idempotency-Replayed"] == "true"
+    assert "Idempotency-Replayed" not in first.headers
+
+
 # --- success, then the next customer is refused (needs US-3.1 and seeded slots) ---------------
 
 def test_hold_a_free_slot_then_the_next_customer_gets_409(api, customer):

@@ -5,10 +5,11 @@ That keeps tests honest - a test that forgets to save fails here too, not only a
 """
 import copy
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.domain.availability import SlotAvailabilityRow
 from app.domain.enums import MachineType, OutboxStatus
+from app.domain.idempotency import IdempotencyRecord
 from app.domain.laundromat import Laundromat
 from app.domain.notification import CLAIM_LEASE, OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
@@ -166,8 +167,37 @@ class MemoryOutboxRepository:
         self.messages[message.id] = copy.deepcopy(message)
 
 
+class MemoryIdempotencyRepository:
+    """Same behaviour as SqlIdempotencyRepository. Tests read `records` to see what was stored."""
+
+    def __init__(self, clock):
+        self.records: dict[tuple[int, str], IdempotencyRecord] = {}
+        self._clock = clock
+
+    def get(self, user_id: int, key: str) -> IdempotencyRecord | None:
+        record = self.records.get((user_id, key))
+        return copy.deepcopy(record) if record else None
+
+    def add(self, record: IdempotencyRecord) -> bool:
+        if (record.user_id, record.key) in self.records:
+            return False  # the primary key (user_id, key): ON CONFLICT DO NOTHING
+        self.records[(record.user_id, record.key)] = copy.deepcopy(replace(record, created_at=self._clock()))
+        return True
+
+    def delete_older_than(self, hours: int) -> int:
+        cutoff = self._clock() - timedelta(hours=hours)
+        old = [k for k, r in self.records.items() if r.created_at < cutoff]
+        for k in old:
+            del self.records[k]
+        return len(old)
+
+
 class MemoryUnitOfWork:
-    """Same interface as SqlAlchemyUnitOfWork. Shares one store across units of work."""
+    """Same interface as SqlAlchemyUnitOfWork. Shares one store across units of work.
+
+    No real transactions: a write is kept even if the block later fails. So a test can't see a
+    rollback here (the twin-request path of idempotency is tested on the real database).
+    """
 
     def __init__(
         self,
@@ -175,11 +205,13 @@ class MemoryUnitOfWork:
         users: MemoryUserRepository | None = None,
         laundromats: MemoryLaundromatRepository | None = None,
         outbox: MemoryOutboxRepository | None = None,
+        idempotency: MemoryIdempotencyRepository | None = None,
     ):
         self.slots = slots or MemorySlotRepository()
         self.users = users or MemoryUserRepository()
         self.laundromats = laundromats or MemoryLaundromatRepository(self.slots)
         self.outbox = outbox or MemoryOutboxRepository(clock=self.slots.now)  # same clock as the slots
+        self.idempotency = idempotency or MemoryIdempotencyRepository(clock=self.slots.now)
         self.committed = False
 
     def __call__(self) -> "MemoryUnitOfWork":  # lets the instance act as its own factory

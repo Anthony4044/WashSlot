@@ -4,13 +4,14 @@ One aggregate, one repository: there is no ReservationRepository. Reservations a
 loaded and saved through their slot, so every writer passes the same door - the slot row's lock.
 """
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy import and_, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.data.tables import (
+    IdempotencyRecordRow,
     LaundromatRow,
     MachineRow,
     MachineSlotRow,
@@ -20,6 +21,7 @@ from app.data.tables import (
 )
 from app.domain.availability import SlotAvailabilityRow
 from app.domain.enums import OutboxStatus, ReservationStatus
+from app.domain.idempotency import IdempotencyRecord
 from app.domain.laundromat import Laundromat
 from app.domain.notification import CLAIM_LEASE, OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
@@ -314,3 +316,44 @@ class SqlOutboxRepository:
         for f in _OUTBOX_FIELDS:
             setattr(row, f, getattr(message, f))
         self.session.flush()
+
+
+_IDEMPOTENCY_FIELDS = ("user_id", "key", "endpoint", "request_hash", "error_code", "response_body")
+
+
+class SqlIdempotencyRepository:
+    """Stored outcomes of Idempotency-Key attempts (US-5.2). Same session as the hold, so they commit together."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get(self, user_id: int, key: str) -> IdempotencyRecord | None:
+        row = self.session.get(IdempotencyRecordRow, (user_id, key))
+        if row is None:
+            return None
+        return IdempotencyRecord(created_at=row.created_at, **{f: getattr(row, f) for f in _IDEMPOTENCY_FIELDS})
+
+    def add(self, record: IdempotencyRecord) -> bool:
+        """INSERT ... ON CONFLICT (user_id, key) DO NOTHING RETURNING user_id.
+
+        If a twin request inserted the same key first, Postgres makes this INSERT wait until the twin
+        commits, then inserts nothing: 0 rows, False. Like SqlUserRepository.add, the database's key
+        decides inside one statement, so there is no check-then-insert gap.
+        """
+        inserted = self.session.execute(
+            insert(IdempotencyRecordRow)
+            .values(**{f: getattr(record, f) for f in _IDEMPOTENCY_FIELDS})
+            .on_conflict_do_nothing(index_elements=[IdempotencyRecordRow.user_id, IdempotencyRecordRow.key])
+            .returning(IdempotencyRecordRow.user_id)
+        ).scalar_one_or_none()
+        return inserted is not None
+
+    def delete_older_than(self, hours: int) -> int:
+        """DELETE FROM idempotency_records WHERE created_at < now() - <hours> hours.
+
+        The database clock, never the worker's: a record younger than `hours` is never deleted.
+        """
+        result = self.session.execute(
+            delete(IdempotencyRecordRow).where(IdempotencyRecordRow.created_at < func.now() - timedelta(hours=hours))
+        )
+        return result.rowcount

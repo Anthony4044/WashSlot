@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.domain.availability import SlotAvailabilityRow
+from app.domain.idempotency import IdempotencyRecord
 from app.domain.laundromat import Laundromat
 from app.domain.notification import OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
@@ -77,11 +78,27 @@ class OutboxRepository(Protocol):
         ...
 
 
+class IdempotencyRepository(Protocol):
+    """Stored outcomes of Idempotency-Key attempts (US-5.2)."""
+
+    def get(self, user_id: int, key: str) -> IdempotencyRecord | None: ...
+
+    def add(self, record: IdempotencyRecord) -> bool:
+        """INSERT ... ON CONFLICT DO NOTHING. False: a record with this (user, key) already exists,
+        so a twin request got there first. Called inside the same unit of work as the hold."""
+        ...
+
+    def delete_older_than(self, hours: int) -> int:
+        """Worker job: delete records created more than `hours` ago by the database clock. Returns how many."""
+        ...
+
+
 class UnitOfWork(Protocol):
     slots: SlotRepository
     laundromats: LaundromatRepository
     users: UserRepository
     outbox: OutboxRepository
+    idempotency: IdempotencyRepository
 
     def __enter__(self) -> "UnitOfWork": ...
     def __exit__(self, exc_type, exc, tb) -> None: ...

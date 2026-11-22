@@ -195,10 +195,12 @@ paths:
         Holds the slot for the caller until expiresAt (10 minutes). If two customers try at the same
         time, exactly one gets 201 and the other gets 409 slot_unavailable. NOT safe and not naturally
         idempotent, which is why the Idempotency-Key header is required: a repeated request with the
-        same key and the same body is answered with the stored outcome of the first attempt (201,
-        404 or 409, same body, with the header Idempotency-Replayed: true) and the hold is placed at
-        most once. Keys are kept for at least 24 hours. A timed-out caller MUST retry with the SAME
-        key; a fresh key is a new attempt.
+        same key, the same slot and the same body is answered with the stored outcome of the first
+        attempt (201, 404 or 409, same body, with the header Idempotency-Replayed: true) and the hold
+        is placed at most once, even when the copies arrive at the same moment. The same key with a
+        different slot or body is 422 idempotency_key_reuse. Keys belong to the caller (two users may
+        pick the same key) and are kept for at least 24 hours; after that the key may be forgotten.
+        A timed-out caller MUST retry with the SAME key; a fresh key is a new attempt.
       security:
         - bearerAuth: ["reservations:write"]
       parameters:
@@ -225,7 +227,15 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: >
+            not_found. No slot has this id, or the id is malformed. Not retryable.
+          headers:
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: >
             slot_unavailable. Someone else holds or has reserved this slot. Not retryable: pick
@@ -240,8 +250,8 @@ paths:
         "422":
           description: >
             invalid_request (bad body), idempotency_key_required (header missing or not 8 to 128
-            characters), or idempotency_key_reuse (the same key with a different body: a client bug,
-            do not retry, investigate). Not retryable.
+            characters), or idempotency_key_reuse (the same key with a different slot or body: a
+            client bug, do not retry, investigate). Not retryable.
           content:
             application/json:
               schema:
@@ -484,7 +494,8 @@ components:
       required: true
       description: >
         A unique client-made token naming this attempt (a UUID is fine). "The same attempt" means
-        the same caller, the same operation, this key and the same body.
+        the same caller, the same operation, this key, the same path parameters and the same body.
+        Kept for at least 24 hours.
       schema:
         type: string
         minLength: 8

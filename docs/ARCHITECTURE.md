@@ -56,10 +56,12 @@ Full rules: [CODING_GUIDE.md](CODING_GUIDE.md).
    - Requires `Idempotency-Key` header.  
    - Parses `slot_5` → `5`, takes `user.id` from the JWT (never from the body).
 2. **Service** `HoldService.place_hold` (`app/services/holds.py`)  
-   - `with uow_factory() as uow:` → one DB transaction.  
+   - `with uow_factory() as uow:` → one DB transaction (opened by `run_once`, `app/services/idempotency.py`).  
+   - Known `Idempotency-Key`? Replay the stored outcome (`Idempotency-Replayed: true`) and stop (US-5.2).  
    - `uow.slots.get(slot_id, lock=True)` → `SELECT … FOR UPDATE`.  
    - Calls `slot.place_hold(...)` on the domain object.  
-   - `save` + commit → returns `HoldDto`.
+   - `save`, then `INSERT` the key's record `ON CONFLICT DO NOTHING` (0 rows → a twin won: roll back, replay its outcome).  
+   - Commit → returns `HoldDto`.
 3. **Domain** `MachineSlot.place_hold` (`app/domain/slot.py`)  
    - Expires stale holds, then refuses if the slot is already taken (`SlotUnavailable`).
 4. **Data** `SqlSlotRepository` (`app/data/repositories.py`)  
