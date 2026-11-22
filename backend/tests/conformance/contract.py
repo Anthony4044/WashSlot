@@ -16,6 +16,8 @@ from jsonschema import Draft202012Validator
 CONTRACT_PATH = Path(__file__).resolve().parents[3] / "contract" / "openapi.yaml"
 CONTRACT = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
 ERROR_CODES = {e["code"] for e in CONTRACT["x-error-catalog"]}
+# Headers WE define (not HTTP's own): a response may carry one only where the contract documents it.
+OUR_HEADERS = ("Idempotency-Replayed",)
 
 
 def _resolve(node: dict) -> dict:
@@ -53,6 +55,10 @@ def check(response: httpx.Response, path: str, method: str):
     """Assert the response is one the contract allows, and return its parsed body (or None)."""
     schema = schema_for(path, method, response.status_code)
     where = f"{method.upper()} {path} -> {response.status_code}"
+    documented_headers = documented_response(path, method, response.status_code).get("headers", {})
+    for name in OUR_HEADERS:
+        if name in response.headers:
+            assert name in documented_headers, f"{where}: sent {name}, which the contract does not document here"
     if schema is None:
         assert response.content == b"", f"{where}: the contract says no body, got {response.text!r}"
         return None
