@@ -3,26 +3,16 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.domain.availability import SlotAvailabilityRow
-from app.domain.laundromat import Laundromat
-from app.services.ids import LAUNDROMAT, MACHINE, SLOT, format_id
+from app.services.ids import MACHINE, SLOT, format_id
 from app.services.outcome import Outcome
 from app.services.unit_of_work import UnitOfWorkFactory
 from app.services.views import (
-    LaundromatDto,
     LaundromatListDto,
     MachineSlotsDto,
     MachineSlotsListDto,
     SlotAvailabilityDto,
+    laundromat_dto,
 )
-
-
-def _laundromat_dto(lm: Laundromat) -> LaundromatDto:
-    return LaundromatDto(
-        laundromat_id=format_id(LAUNDROMAT, lm.id),
-        name=lm.name,
-        address=lm.address,
-        timezone=lm.timezone,
-    )
 
 
 def _group_machines(rows: list[SlotAvailabilityRow]) -> list[MachineSlotsDto]:
@@ -65,7 +55,7 @@ class BrowseService:
         """GET /laundromats — every laundromat, by name."""
         with self.uow_factory() as uow:
             rows = uow.laundromats.list_all()
-        return Outcome.success(LaundromatListDto(laundromats=[_laundromat_dto(lm) for lm in rows]))
+        return Outcome.success(LaundromatListDto(laundromats=[laundromat_dto(lm) for lm in rows]))
 
     def list_slots(self, laundromat_id: int, date_str: str) -> Outcome:
         """GET /laundromats/{id}/slots?date=YYYY-MM-DD — reservable machines for that local day."""

@@ -23,6 +23,7 @@ from app.domain.availability import SlotAvailabilityRow
 from app.domain.enums import OutboxStatus, ReservationStatus
 from app.domain.idempotency import IdempotencyRecord
 from app.domain.laundromat import Laundromat
+from app.domain.machine import Machine
 from app.domain.notification import CLAIM_LEASE, OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
@@ -53,13 +54,23 @@ class SqlSlotRepository:
 
     def get(self, slot_id: int, *, lock: bool = False) -> MachineSlot | None:
         """Load the whole aggregate. lock=True takes SELECT ... FOR UPDATE on the slot row,
-        held until the unit of work ends, so concurrent writers to this slot queue up."""
-        query = select(MachineSlotRow).where(MachineSlotRow.id == slot_id)
+        held until the unit of work ends, so concurrent writers to this slot queue up.
+
+        The machine's `reservable` flag comes along (US-7.1: no new holds on a walk-in-only machine).
+        `FOR UPDATE OF machine_slots` locks only the slot row, never the machine row, so holds on
+        other slots of the same machine don't wait for each other.
+        """
+        query = (
+            select(MachineSlotRow, MachineRow.reservable)
+            .join(MachineRow, MachineRow.id == MachineSlotRow.machine_id)
+            .where(MachineSlotRow.id == slot_id)
+        )
         if lock:
-            query = query.with_for_update()
-        row = self.session.execute(query).scalar_one_or_none()
-        if row is None:
+            query = query.with_for_update(of=MachineSlotRow)
+        found = self.session.execute(query).one_or_none()
+        if found is None:
             return None
+        row, reservable = found
         reservations = self.session.execute(
             select(ReservationRow).where(ReservationRow.slot_id == slot_id).order_by(ReservationRow.id)
         ).scalars()
@@ -69,7 +80,27 @@ class SqlSlotRepository:
             start_time=row.start_time,
             end_time=row.end_time,
             reservations=[_to_domain(r) for r in reservations],
+            machine_reservable=reservable,
         )
+
+    def create_many(self, new_slots: list[tuple[int, datetime, datetime]]) -> int:
+        """Operator tool (US-7.1): insert (machine_id, start, end) slots; returns how many were new.
+
+            INSERT INTO machine_slots (machine_id, start_time, end_time) VALUES (...), (...)
+            ON CONFLICT (machine_id, start_time) DO NOTHING RETURNING id
+
+        The unique constraint uq_machine_slots_machine_start decides what already exists, inside the
+        one statement: no check-then-insert gap, and repeating the request creates nothing more.
+        """
+        if not new_slots:
+            return 0
+        inserted = self.session.execute(
+            insert(MachineSlotRow)
+            .values([{"machine_id": m, "start_time": s, "end_time": e} for m, s, e in new_slots])
+            .on_conflict_do_nothing(index_elements=[MachineSlotRow.machine_id, MachineSlotRow.start_time])
+            .returning(MachineSlotRow.id)
+        ).scalars().all()
+        return len(inserted)
 
     def get_for_reservation(self, reservation_id: int, *, lock: bool = False) -> MachineSlot | None:
         """Load the aggregate that owns a reservation (locking the ROOT, never just the child)."""
@@ -152,6 +183,11 @@ class SqlSlotRepository:
         ]
 
 
+def _laundromat(row: LaundromatRow) -> Laundromat:
+    return Laundromat(id=row.id, name=row.name, address=row.address, timezone=row.timezone,
+                      operator_id=row.operator_id)
+
+
 class SqlLaundromatRepository:
     """Browse queries over laundromats (read model; no aggregate writes)."""
 
@@ -160,15 +196,20 @@ class SqlLaundromatRepository:
 
     def list_all(self) -> list[Laundromat]:
         rows = self.session.scalars(select(LaundromatRow).order_by(LaundromatRow.name, LaundromatRow.id)).all()
-        return [
-            Laundromat(id=row.id, name=row.name, address=row.address, timezone=row.timezone) for row in rows
-        ]
+        return [_laundromat(row) for row in rows]
+
+    def list_for_operator(self, user_id: int) -> list[Laundromat]:
+        """The laundromats this user operates, by name (US-7.1)."""
+        rows = self.session.scalars(
+            select(LaundromatRow)
+            .where(LaundromatRow.operator_id == user_id)
+            .order_by(LaundromatRow.name, LaundromatRow.id)
+        ).all()
+        return [_laundromat(row) for row in rows]
 
     def get(self, laundromat_id: int) -> Laundromat | None:
         row = self.session.get(LaundromatRow, laundromat_id)
-        if row is None:
-            return None
-        return Laundromat(id=row.id, name=row.name, address=row.address, timezone=row.timezone)
+        return None if row is None else _laundromat(row)
 
     def reservable_slots_for_day(
         self, laundromat_id: int, day_start: datetime, day_end: datetime
@@ -357,3 +398,33 @@ class SqlIdempotencyRepository:
             delete(IdempotencyRecordRow).where(IdempotencyRecordRow.created_at < func.now() - timedelta(hours=hours))
         )
         return result.rowcount
+
+
+class SqlMachineRepository:
+    """Machines as the operator manages them (US-7.1)."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def list_for_laundromat(self, laundromat_id: int) -> list[Machine]:
+        rows = self.session.scalars(
+            select(MachineRow)
+            .where(MachineRow.laundromat_id == laundromat_id)
+            .order_by(MachineRow.label, MachineRow.id)
+        ).all()
+        return [_machine(row) for row in rows]
+
+    def get(self, machine_id: int) -> Machine | None:
+        row = self.session.get(MachineRow, machine_id)
+        return None if row is None else _machine(row)
+
+    def save(self, machine: Machine) -> None:
+        """Write back what an operator can change: the reservable switch."""
+        row = self.session.get(MachineRow, machine.id)
+        row.reservable = machine.reservable
+        self.session.flush()
+
+
+def _machine(row: MachineRow) -> Machine:
+    return Machine(id=row.id, laundromat_id=row.laundromat_id, label=row.label, type=row.type,
+                   reservable=row.reservable)

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.data.repositories import (
     SqlIdempotencyRepository,
     SqlLaundromatRepository,
+    SqlMachineRepository,
     SqlOutboxRepository,
     SqlSlotRepository,
     SqlUserRepository,
@@ -32,6 +33,7 @@ class SqlAlchemyUnitOfWork:
         self.users = SqlUserRepository(self.session)
         self.outbox = SqlOutboxRepository(self.session)  # same session: commits with the reservation
         self.idempotency = SqlIdempotencyRepository(self.session)  # same session: commits with the hold
+        self.machines = SqlMachineRepository(self.session)
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:

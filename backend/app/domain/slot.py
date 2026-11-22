@@ -59,6 +59,7 @@ class MachineSlot:
     start_time: datetime
     end_time: datetime
     reservations: list[Reservation] = field(default_factory=list)
+    machine_reservable: bool = True  # the operator's switch (US-7.1): False means walk-in only
 
     def reservation(self, reservation_id: int) -> Reservation | None:
         return next((r for r in self.reservations if r.id == reservation_id), None)
@@ -69,9 +70,11 @@ class MachineSlot:
     def is_available(self, now: datetime) -> bool:
         """THE availability rule, stated once. Read models must agree with it (pinned by a test).
 
-        A slot in the past (start_time already reached) cannot be reserved.
+        A slot in the past (start_time already reached) cannot be reserved, and neither can a slot
+        of a machine the operator made walk-in only (US-7.1). Holds made before stay valid: this
+        rule only guards NEW holds (place_hold), never confirm.
         """
-        if now >= self.start_time:
+        if now >= self.start_time or not self.machine_reservable:
             return False
         return self.active_reservation(now) is None
 
