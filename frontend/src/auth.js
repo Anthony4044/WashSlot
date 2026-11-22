@@ -41,6 +41,17 @@ export function isLoggedIn() {
   return Boolean(getToken())
 }
 
+/** The API verifies the token and permissions. This is only for navigation. */
+export function hasOperatorScope(token) {
+  try {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const { scope } = JSON.parse(atob(payload))
+    return typeof scope === 'string' && scope.split(' ').includes('operator:manage')
+  } catch {
+    return false
+  }
+}
+
 export function subscribe(listener) {
   listeners.add(listener)
   return () => listeners.delete(listener)

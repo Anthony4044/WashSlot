@@ -360,7 +360,8 @@ code {
   font-weight: 600;
 }
 
-.field input {
+.field input,
+.field select {
   font: inherit;
   color: var(--ink);
   background: #fff;
@@ -369,7 +370,8 @@ code {
   padding: 0.6rem 0.75rem;
 }
 
-.field input:focus-visible {
+.field input:focus-visible,
+.field select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-color: var(--accent);
@@ -472,7 +474,16 @@ code {
   margin: 0 0 0.4rem;
 }
 
-/* My reservations (US-4.3) */
+.today-location {
+  max-width: 24rem;
+  margin-bottom: 1rem;
+}
+
+.today-bookings .reservation-item {
+  overflow-wrap: anywhere;
+}
+
+/* Reservation lists */
 
 .reservation-list {
   list-style: none;

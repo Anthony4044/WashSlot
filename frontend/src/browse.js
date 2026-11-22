@@ -21,9 +21,10 @@ export function todayDateInputValue(now = new Date()) {
 }
 
 /** Slot start as a short time label, e.g. "6:00 PM". */
-export function formatSlotHour(startTime) {
+export function formatSlotHour(startTime, timeZone) {
   return new Date(startTime).toLocaleTimeString(undefined, {
     hour: 'numeric',
     minute: '2-digit',
+    timeZone,
   })
 }

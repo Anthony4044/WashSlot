@@ -20,7 +20,7 @@ from app.data.tables import (
 )
 from app.domain.availability import SlotAvailabilityRow
 from app.domain.enums import OutboxStatus, ReservationStatus
-from app.domain.laundromat import Laundromat
+from app.domain.laundromat import BOOKING_STATUSES, Laundromat, TodayBooking
 from app.domain.notification import CLAIM_LEASE, OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
@@ -150,6 +150,12 @@ class SqlSlotRepository:
         ]
 
 
+def _to_laundromat(row: LaundromatRow) -> Laundromat:
+    return Laundromat(
+        id=row.id, name=row.name, address=row.address, timezone=row.timezone, operator_id=row.operator_id,
+    )
+
+
 class SqlLaundromatRepository:
     """Browse queries over laundromats (read model; no aggregate writes)."""
 
@@ -158,15 +164,44 @@ class SqlLaundromatRepository:
 
     def list_all(self) -> list[Laundromat]:
         rows = self.session.scalars(select(LaundromatRow).order_by(LaundromatRow.name, LaundromatRow.id)).all()
-        return [
-            Laundromat(id=row.id, name=row.name, address=row.address, timezone=row.timezone) for row in rows
-        ]
+        return [_to_laundromat(row) for row in rows]
 
     def get(self, laundromat_id: int) -> Laundromat | None:
         row = self.session.get(LaundromatRow, laundromat_id)
-        if row is None:
-            return None
-        return Laundromat(id=row.id, name=row.name, address=row.address, timezone=row.timezone)
+        return _to_laundromat(row) if row else None
+
+    def list_for_operator(self, operator_id: int) -> list[Laundromat]:
+        rows = self.session.scalars(
+            select(LaundromatRow)
+            .where(LaundromatRow.operator_id == operator_id)
+            .order_by(LaundromatRow.name, LaundromatRow.id)
+        )
+        return [_to_laundromat(row) for row in rows]
+
+    def bookings_for_day(self, laundromat_id: int, day_start: datetime, day_end: datetime) -> list[TodayBooking]:
+        rows = self.session.execute(
+            select(
+                ReservationRow.id,
+                MachineRow.label,
+                MachineSlotRow.start_time,
+                MachineSlotRow.end_time,
+                UserRow.email,
+                ReservationRow.status,
+                ReservationRow.checked_in_at,
+            )
+            .select_from(ReservationRow)
+            .join(MachineSlotRow, MachineSlotRow.id == ReservationRow.slot_id)
+            .join(MachineRow, MachineRow.id == MachineSlotRow.machine_id)
+            .join(UserRow, UserRow.id == ReservationRow.user_id)
+            .where(
+                MachineRow.laundromat_id == laundromat_id,
+                MachineSlotRow.start_time >= day_start,
+                MachineSlotRow.start_time < day_end,
+                ReservationRow.status.in_(BOOKING_STATUSES),
+            )
+            .order_by(MachineSlotRow.start_time, MachineRow.label, ReservationRow.id)
+        )
+        return [TodayBooking(*row) for row in rows]
 
     def reservable_slots_for_day(
         self, laundromat_id: int, day_start: datetime, day_end: datetime

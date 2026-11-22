@@ -43,6 +43,8 @@ tags:
     description: Hold a slot for 10 minutes, then confirm it.
   - name: reservations
     description: The caller's own reservations.
+  - name: operator
+    description: Tools for the laundromats assigned to an operator.
 
 paths:
   /auth/register:
@@ -131,14 +133,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [laundromats]
-                additionalProperties: false
-                properties:
-                  laundromats:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Laundromat"
+                $ref: "#/components/schemas/LaundromatList"
         default:
           $ref: "#/components/responses/ServerError"
 
@@ -440,6 +435,57 @@ paths:
         default:
           $ref: "#/components/responses/ServerError"
 
+  /operator/laundromats:
+    get:
+      operationId: listOperatorLaundromats
+      tags: [operator]
+      summary: List my assigned laundromats
+      description: Safe to retry. Returns only laundromats assigned to the caller.
+      security:
+        - bearerAuth: ["operator:manage"]
+      responses:
+        "200":
+          description: The operator's assigned laundromats.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LaundromatList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /operator/laundromats/{laundromatId}/today:
+    get:
+      operationId: listTodaysBookings
+      tags: [operator]
+      summary: List today's bookings for an assigned laundromat
+      description: >
+        Safe to retry. Returns confirmed bookings and no-shows whose slots start on the current
+        calendar day in the laundromat's time zone, ordered by start time. Unassigned
+        laundromats return 404 not_found.
+      security:
+        - bearerAuth: ["operator:manage"]
+      parameters:
+        - $ref: "#/components/parameters/LaundromatIdPath"
+      responses:
+        "200":
+          description: Today's bookings and arrival times.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodayBookings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/ServerError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -538,6 +584,54 @@ components:
             $ref: "#/components/schemas/Error"
 
   schemas:
+    LaundromatList:
+      type: object
+      required: [laundromats]
+      additionalProperties: false
+      properties:
+        laundromats:
+          type: array
+          items:
+            $ref: "#/components/schemas/Laundromat"
+    TodayBooking:
+      type: object
+      additionalProperties: false
+      required: [reservationId, machineLabel, startTime, endTime, customerEmail, status, checkedInAt]
+      properties:
+        reservationId:
+          $ref: "#/components/schemas/ReservationId"
+        machineLabel:
+          type: string
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        customerEmail:
+          type: string
+          format: email
+          description: The email of the customer account that booked the slot.
+        status:
+          type: string
+          enum: [CONFIRMED, NO_SHOW]
+        checkedInAt:
+          type: [string, "null"]
+          format: date-time
+    TodayBookings:
+      type: object
+      additionalProperties: false
+      required: [date, reservations]
+      properties:
+        date:
+          type: string
+          format: date
+          description: The current date in the laundromat's time zone.
+        reservations:
+          type: array
+          items:
+            $ref: "#/components/schemas/TodayBooking"
+
     # ---- identifiers: prefix + opaque number ----
     LaundromatId:
       type: string

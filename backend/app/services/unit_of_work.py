@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.domain.availability import SlotAvailabilityRow
-from app.domain.laundromat import Laundromat
+from app.domain.laundromat import Laundromat, TodayBooking
 from app.domain.notification import OutboxMessage
 from app.domain.slot import MachineSlot, Reservation, SlotDetails
 from app.domain.user import User
@@ -39,6 +39,10 @@ class LaundromatRepository(Protocol):
         ...
 
     def get(self, laundromat_id: int) -> Laundromat | None: ...
+
+    def list_for_operator(self, operator_id: int) -> list[Laundromat]: ...
+
+    def bookings_for_day(self, laundromat_id: int, day_start: datetime, day_end: datetime) -> list[TodayBooking]: ...
 
     def reservable_slots_for_day(
         self, laundromat_id: int, day_start: datetime, day_end: datetime
