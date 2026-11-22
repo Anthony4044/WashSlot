@@ -5,10 +5,11 @@ slot. If the reply is lost (a timeout), the client can't tell whether its hold w
 contract's answer is a key the CLIENT makes up for one attempt (a UUID). A retry of that attempt
 sends the SAME key, so the server can recognize it as a repeat instead of a new attempt.
 
-What each story does with it:
-- US-4.1 (now):   the header is required and must be 8 to 128 characters, or 422 idempotency_key_required.
-- US-5.2 (later): the service stores the key and the outcome in the same transaction as the hold,
-                  and answers a repeat with that stored outcome (the hold is placed at most once).
+Who does what:
+- Here (US-4.1):     the header is required and must be 8 to 128 characters, or 422 idempotency_key_required.
+- The service layer  (US-5.2, app/services/idempotency.py): stores the key and the outcome in the same
+                     transaction as the hold, and answers a repeat with that stored outcome (the hold is
+                     placed at most once). The same key for a different request is 422 idempotency_key_reuse.
 """
 from typing import Annotated
 

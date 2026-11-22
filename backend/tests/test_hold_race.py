@@ -141,7 +141,7 @@ def test_without_the_lock_only_the_unique_index_prevents_a_double_booking(racing
 
     def place_hold(i: int):
         user_id, email = customers[i]
-        return service.place_hold(user_id, slot.id, email)
+        return service.place_hold(user_id, slot.id, email, f"control-attempt-{i:02d}")  # one attempt each
 
     results = race(N, place_hold)
 
