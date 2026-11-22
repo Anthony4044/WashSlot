@@ -181,6 +181,22 @@ tests. The [backend test guide](../backend/README.md#contract-and-conformance) c
 
 ---
 
+## 13. Operator retries failed emails (US-7.3)
+
+**What:** The worker gives up on a confirmation email after 6 failed tries, or at once when Resend refuses it (a 4xx). An operator sees their laundromats' emails under **Emails** (`/operator/notifications`), filtered by Failed / Waiting to send / Sent, and clicks **Retry**. The email goes back to PENDING with attempts 0, and the worker sends it within seconds, with the same backoff as the first time. Retry is idempotent: a PENDING or SENT email comes back unchanged, so it is never sent twice. Another operator's email is `404`; a customer gets `403`.
+
+| How to test (browser) | How to test (API / pytest) | Where in code |
+|---|---|---|
+| Make an email fail fast: start `python worker.py` with `RESEND_API_KEY=re_invalid` (Resend answers 4xx, so FAILED at once), then confirm a booking as Alice | `GET /operator/notifications?status=FAILED`, `POST /operator/notifications/{id}/retry` | Domain: `OutboxMessage.retry` (`app/domain/notification.py`) |
+| Restart the worker with `RESEND_API_KEY` empty (it only logs the email). As the operator: **Emails** → **Retry** → choose **Sent** | `pytest tests/test_failed_emails.py` (database cases need `TEST_DATABASE_URL`) | Service: `OperatorService.list_notifications`, `retry_notification` (ownership check) |
+| Log in as Alice → no Emails link; `/operator/notifications` says operators only | Conformance: `tests/conformance/test_notifications.py` (needs the seeded operator) | Data: `SqlOutboxRepository.get(lock=True)` (`FOR UPDATE`), `list_for_laundromats` · UI: `pages/OperatorNotificationsPage.jsx`, `operator.js` |
+
+The slow way to fail an email: `EMAIL_FAKE_FAILURES=6` makes all six tries fail (about 16 minutes of backoff).
+
+**Demo line:** “Retry doesn't send anything itself. It puts the email back in the outbox, the worker sends it, and Resend gets the same `Idempotency-Key` (`outbox-{id}`) as before.”
+
+---
+
 ## End-to-end happy path (all features)
 
 1. Seed: `seed_users.py` + `seed_laundromats.py`
