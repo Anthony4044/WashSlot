@@ -406,9 +406,11 @@ paths:
       summary: Check in for a reservation
       description: >
         Marks the customer as present: by the customer ("I'm here") or by the operator of that
-        laundromat ("Mark present"). Anyone else gets 404 not_found. A reservation not checked in
-        15 minutes after its start becomes NO_SHOW and the machine goes to walk-ins. Naturally
-        idempotent: checking in again returns the same reservation. No request body.
+        laundromat ("Mark present"). Other callers with write scope get 404 not_found.
+        A confirmed reservation can be checked in early, up until 15 minutes after its slot starts
+        (exclusive). At that deadline an unchecked booking is released to walk-ins. Naturally
+        idempotent: checking in again returns the reservation with the original checkedInAt, even
+        after the deadline. No request body.
       security:
         - bearerAuth: ["reservations:write"]
       parameters:
@@ -427,7 +429,10 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: already_cancelled. A cancelled reservation cannot be checked in. Not retryable.
+          description: >
+            already_cancelled for a cancelled booking, reservation_not_confirmed for a held or
+            expired reservation, or too_late_to_check_in when the grace period has ended or the
+            reservation is already a NO_SHOW. Not retryable.
           content:
             application/json:
               schema:
@@ -905,6 +910,8 @@ x-error-catalog:
   - {code: hold_expired, status: 409, retryable: false}
   - {code: too_late_to_cancel, status: 409, retryable: false}
   - {code: already_cancelled, status: 409, retryable: false}
+  - {code: reservation_not_confirmed, status: 409, retryable: false}
+  - {code: too_late_to_check_in, status: 409, retryable: false}
   - {code: email_taken, status: 409, retryable: false}
   # our fault: the same request may succeed later
   - {code: internal_error, status: 500, retryable: true}

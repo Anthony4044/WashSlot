@@ -46,8 +46,8 @@ class SqlSlotRepository:
         self.session = session
 
     def now(self) -> datetime:
-        """The database clock: the one authority for expiry decisions (proposal, section 5)."""
-        return self.session.execute(select(func.now())).scalar_one()
+        """Read the database clock after taking any locks, even if the transaction had to wait."""
+        return self.session.execute(select(func.statement_timestamp())).scalar_one()
 
     def get(self, slot_id: int, *, lock: bool = False) -> MachineSlot | None:
         """Load the whole aggregate. lock=True takes SELECT ... FOR UPDATE on the slot row,

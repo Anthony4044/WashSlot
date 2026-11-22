@@ -10,6 +10,7 @@ from app.api.deps import get_uow_factory
 from app.api.responses import to_response
 from app.api.schemas.errors import ErrorResponse
 from app.api.security import CurrentUser, require_scope
+from app.domain.user import OPERATOR_MANAGE
 from app.services.ids import RESERVATION, parse_id
 from app.services.reservations import ReservationService
 from app.services.unit_of_work import UnitOfWorkFactory
@@ -65,3 +66,16 @@ def get_reservation(reservation_id: str, user: Reader, service: Service):
 def cancel_reservation(reservation_id: str, user: Writer, service: Service):
     """Only before the slot starts. Already cancelled → 204 again. Someone else's → 404."""
     return to_response(service.cancel(user.id, parse_id(RESERVATION, reservation_id)), 204)
+
+
+@router.post(
+    "/reservations/{reservation_id}/check-in",
+    operation_id="checkIn",
+    response_model=ReservationDto,
+    responses={**AUTH_ERRORS, 409: {"model": ErrorResponse}},
+    summary="Check in for a reservation",
+)
+def check_in(reservation_id: str, user: Writer, service: Service):
+    return to_response(service.check_in(
+        user.id, parse_id(RESERVATION, reservation_id), is_operator=user.has_scope(OPERATOR_MANAGE),
+    ))

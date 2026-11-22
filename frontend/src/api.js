@@ -26,6 +26,8 @@ const ERROR_MESSAGES = {
   hold_expired: 'This hold has expired.',
   too_late_to_cancel: 'It is too late to cancel this reservation.',
   already_cancelled: 'This reservation is already cancelled.',
+  reservation_not_confirmed: 'Only confirmed reservations can be checked in.',
+  too_late_to_check_in: 'The check-in window has closed.',
   email_taken: 'An account with that email already exists.',
   internal_error: 'Something went wrong on the server. Try again.',
   service_unavailable: 'The service is temporarily unavailable. Try again.',

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ApiError } from '../api.js'
 import { isLoggedIn } from '../auth.js'
 import { formatSlotTime } from '../holds.js'
-import { cancelReservation, listMyReservations } from '../reservations.js'
+import { cancelReservation, checkInReservation, listMyReservations } from '../reservations.js'
 
 /** hold_7 and res_7 are the same row — open the hold page for countdown + Confirm. */
 function holdPathFromReservationId(reservationId) {
@@ -17,9 +17,10 @@ function canCancel(reservation, now = Date.now()) {
   return Date.parse(reservation.startTime) > now
 }
 
-function ReservationRow({ reservation: r, onCancel, busyId }) {
+function ReservationRow({ reservation: r, onCancel, onCheckIn, pending }) {
   const cancellable = canCancel(r)
-  const busy = busyId === r.reservationId
+  const disabled = pending !== null
+  const ownAction = pending?.reservationId === r.reservationId ? pending.action : null
 
   const details = (
     <>
@@ -27,7 +28,9 @@ function ReservationRow({ reservation: r, onCancel, busyId }) {
         {r.laundromatName} · {r.machineLabel}
       </span>
       <span className="reservation-when">{formatSlotTime(r.startTime, r.endTime)}</span>
-      <span className={`reservation-status status-${r.status.toLowerCase()}`}>{r.status}</span>
+      <span className={`reservation-status status-${r.status.toLowerCase()}`}>
+        {r.status === 'CONFIRMED' && r.checkedInAt ? 'Checked in' : r.status}
+      </span>
     </>
   )
 
@@ -39,8 +42,8 @@ function ReservationRow({ reservation: r, onCancel, busyId }) {
           <span className="reservation-action">Open to see the timer and confirm</span>
         </Link>
         {cancellable && (
-          <button type="button" className="button-secondary" disabled={busy} onClick={() => onCancel(r)}>
-            {busy ? 'Cancelling…' : 'Cancel hold'}
+          <button type="button" className="button-secondary" disabled={disabled} onClick={() => onCancel(r)}>
+            {ownAction === 'cancel' ? 'Cancelling…' : 'Cancel hold'}
           </button>
         )}
       </li>
@@ -54,20 +57,27 @@ function ReservationRow({ reservation: r, onCancel, busyId }) {
       className={`reservation-item reservation-item-actions${cancelled ? ' reservation-item-cancelled' : ''}`}
     >
       <div className="reservation-main">{details}</div>
-      {cancellable && (
-        <button type="button" className="button-secondary" disabled={busy} onClick={() => onCancel(r)}>
-          {busy ? 'Cancelling…' : 'Cancel'}
-        </button>
-      )}
+      <div className="reservation-buttons">
+        {r.status === 'CONFIRMED' && !r.checkedInAt && (
+          <button type="button" className="button-secondary" disabled={disabled} onClick={() => onCheckIn(r)}>
+            {ownAction === 'check-in' ? 'Checking in…' : "I'm here"}
+          </button>
+        )}
+        {cancellable && (
+          <button type="button" className="button-secondary" disabled={disabled} onClick={() => onCancel(r)}>
+            {ownAction === 'cancel' ? 'Cancelling…' : 'Cancel'}
+          </button>
+        )}
+      </div>
     </li>
   )
 }
 
-/** /reservations — caller's bookings (US-4.3) + cancel before slot start (US-5.3). */
+/** The customer's bookings, cancellation and check-in. */
 export function ReservationsPage() {
   const [reservations, setReservations] = useState(null)
   const [error, setError] = useState(null)
-  const [busyId, setBusyId] = useState(null)
+  const [pending, setPending] = useState(null)
 
   useEffect(() => {
     if (!isLoggedIn()) {
@@ -96,7 +106,7 @@ export function ReservationsPage() {
     if (!ok) {
       return
     }
-    setBusyId(reservation.reservationId)
+    setPending({ reservationId: reservation.reservationId, action: 'cancel' })
     setError(null)
     try {
       await cancelReservation(reservation.reservationId)
@@ -108,7 +118,21 @@ export function ReservationsPage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not cancel.')
     } finally {
-      setBusyId(null)
+      setPending(null)
+    }
+  }
+
+  async function onCheckIn(reservation) {
+    const { reservationId } = reservation
+    setPending({ reservationId, action: 'check-in' })
+    setError(null)
+    try {
+      const checkedIn = await checkInReservation(reservationId)
+      setReservations((list) => list.map((item) => item.reservationId === reservationId ? checkedIn : item))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not check in.')
+    } finally {
+      setPending(null)
     }
   }
 
@@ -151,7 +175,13 @@ export function ReservationsPage() {
       {reservations && reservations.length > 0 && (
         <ul className="reservation-list">
           {reservations.map((r) => (
-            <ReservationRow key={r.reservationId} reservation={r} onCancel={onCancel} busyId={busyId} />
+            <ReservationRow
+              key={r.reservationId}
+              reservation={r}
+              onCancel={onCancel}
+              onCheckIn={onCheckIn}
+              pending={pending}
+            />
           ))}
         </ul>
       )}

@@ -2,6 +2,7 @@
 - list mine     GET /me/reservations           (US-4.3)
 - fetch one     GET /reservations/{id}         (US-4.3)
 - cancel        DELETE /reservations/{id}      (US-5.3)
+- check in      POST /reservations/{id}/check-in (US-7.2)
 
 Ownership is checked here: someone else's reservation is `not_found`, so we never reveal it exists.
 """
@@ -49,3 +50,24 @@ class ReservationService:
         except DomainError as refused:
             return Outcome.failure(refused.code)
         return Outcome.success(None)
+
+    def check_in(self, user_id: int, reservation_id: int, *, is_operator: bool = False) -> Outcome:
+        """Record arrival for the customer who booked or the operator assigned to the laundromat."""
+        try:
+            with self.uow_factory() as uow:
+                slot = uow.slots.get_for_reservation(reservation_id, lock=True)
+                reservation = slot.reservation(reservation_id) if slot else None
+                if reservation is None or (reservation.user_id != user_id and not is_operator):
+                    return Outcome.failure("not_found")
+                details = uow.slots.details(slot.id)
+                if reservation.user_id != user_id:
+                    laundromat = uow.laundromats.get(details.laundromat_id)
+                    if laundromat is None or laundromat.operator_id != user_id:
+                        return Outcome.failure("not_found")
+                already_checked_in = reservation.checked_in_at is not None
+                checked_in = slot.check_in(reservation_id, uow.slots.now())
+                if not already_checked_in:
+                    uow.slots.save(slot)
+        except DomainError as refused:
+            return Outcome.failure(refused.code)
+        return Outcome.success(reservation_dto(checked_in, details))

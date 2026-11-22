@@ -507,6 +507,16 @@ code {
   gap: 0.75rem;
 }
 
+.reservation-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.reservation-buttons:empty {
+  display: none;
+}
+
 .reservation-main,
 .reservation-main-link {
   display: grid;

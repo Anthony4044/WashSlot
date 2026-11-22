@@ -32,3 +32,11 @@ class AlreadyCancelled(DomainError):
 
 class TooLateToCancel(DomainError):
     code = "too_late_to_cancel"
+
+
+class ReservationNotConfirmed(DomainError):
+    code = "reservation_not_confirmed"
+
+
+class TooLateToCheckIn(DomainError):
+    code = "too_late_to_check_in"

@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom'
 import { isLoggedIn } from '../auth.js'
 import { formatSlotHour } from '../browse.js'
 import { listOperatorLaundromats, listTodaysBookings } from '../operator.js'
+import { checkInReservation } from '../reservations.js'
 
 function TodayBookings({ laundromat }) {
   const [bookings, setBookings] = useState(null)
   const [error, setError] = useState(null)
   const [refresh, setRefresh] = useState(0)
+  const [markingId, setMarkingId] = useState(null)
   const { laundromatId, timezone } = laundromat
 
   useEffect(() => {
@@ -28,9 +30,32 @@ function TodayBookings({ laundromat }) {
     setRefresh((count) => count + 1)
   }
 
+  async function markPresent(reservationId) {
+    setMarkingId(reservationId)
+    setError(null)
+    try {
+      const updated = await checkInReservation(reservationId)
+      setBookings((current) => ({
+        ...current,
+        reservations: current.reservations.map((booking) => booking.reservationId === reservationId
+          ? { ...booking, checkedInAt: updated.checkedInAt }
+          : booking),
+      }))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setMarkingId(null)
+    }
+  }
+
   return (
     <div className="today-bookings">
-      <button type="button" className="button-secondary" onClick={reload} disabled={!bookings && !error}>
+      <button
+        type="button"
+        className="button-secondary"
+        onClick={reload}
+        disabled={markingId !== null || (!bookings && !error)}
+      >
         Refresh bookings
       </button>
       {error && <p className="form-error" role="alert">{error}</p>}
@@ -56,6 +81,16 @@ function TodayBookings({ laundromat }) {
                         ? `Checked in at ${formatSlotHour(booking.checkedInAt, timezone)}`
                         : 'Awaiting check-in'}
                   </span>
+                  {booking.status === 'CONFIRMED' && !booking.checkedInAt && (
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={markingId !== null}
+                      onClick={() => markPresent(booking.reservationId)}
+                    >
+                      {markingId === booking.reservationId ? 'Marking present…' : 'Mark present'}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
