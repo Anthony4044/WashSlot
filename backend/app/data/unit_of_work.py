@@ -13,6 +13,7 @@ Keep it short: no external calls (email, payments) inside it.
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.data.repositories import (
+    SqlIdempotencyRepository,
     SqlLaundromatRepository,
     SqlOutboxRepository,
     SqlSlotRepository,
@@ -30,6 +31,7 @@ class SqlAlchemyUnitOfWork:
         self.laundromats = SqlLaundromatRepository(self.session)
         self.users = SqlUserRepository(self.session)
         self.outbox = SqlOutboxRepository(self.session)  # same session: commits with the reservation
+        self.idempotency = SqlIdempotencyRepository(self.session)  # same session: commits with the hold
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:

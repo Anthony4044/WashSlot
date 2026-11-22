@@ -126,7 +126,22 @@ What is **on `main` today**, how to try it, and where the code lives. Owners are
 
 ---
 
-## 10. Today view, check-in and no-shows (US-7.2)
+## 10. Safe retries with an idempotency key (US-5.2)
+
+**What:** If a hold's response is lost, the client retries with the **same** `Idempotency-Key` and gets the first answer back (same status and body, plus `Idempotency-Replayed: true`). It never gets a second hold. Whatever the first attempt got (201, 404 or 409) is replayed. The same key with another slot or email is `422 idempotency_key_reuse`. Keys are kept at least 24 hours, then the worker deletes them.
+
+| How to test (browser) | How to test (API / pytest) | Where in code |
+|---|---|---|
+| Stop the API, click **Hold** → error + **Try again**; start the API, click **Try again** → one hold (same key reused) | Send the same `POST /slots/{slotId}/holds` twice with one `Idempotency-Key` → same `holdId`, 2nd has `Idempotency-Replayed: true` | Service: `app/services/idempotency.py` → `run_once` |
+| | `pytest tests/test_service_idempotency.py tests/test_idempotency_api.py tests/test_idempotency_retention.py` | Table: `idempotency_records` (migration `0002`) |
+| | `pytest tests/test_hold_race.py -k eight` (8 parallel copies → 1 hold, 7 replays; needs `TEST_DATABASE_URL`) | Worker job: `forget_old_idempotency_keys` in `worker.py` |
+| | Conformance: replay cases in `tests/conformance/test_place_hold.py` | UI: `pages/HoldPage.jsx`, `holds.js` (`newAttemptKey`, retries) |
+
+**Demo line:** “8 copies of one request at the same moment → one hold; the 7 others get the same hold replayed, never a 409.”
+
+---
+
+## 11. Today view, check-in and no-shows (US-7.2)
 
 1. Start the API, frontend and `python worker.py`. On a development database, seed users first
    and then seed laundromats so the demo operator is assigned to the seeded locations.

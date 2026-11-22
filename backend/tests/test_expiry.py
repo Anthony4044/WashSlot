@@ -7,6 +7,7 @@ What we prove:
 - the worker loop runs due jobs and survives a job that crashes
 """
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
@@ -22,6 +23,11 @@ from tests.factories import make_reservation, make_slot, make_user
 
 NOW = datetime(2030, 1, 7, 17, 0, tzinfo=UTC)  # any fixed time works: the memory clock is ours
 ALICE, BOB = 1, 2
+
+
+def new_key() -> str:
+    """A fresh Idempotency-Key: every hold here is a new attempt, never a retry (US-5.2)."""
+    return str(uuid4())
 
 
 class Clock:
@@ -50,7 +56,7 @@ def uow(clock) -> MemoryUnitOfWork:
 
 def hold_for(uow, user_id) -> int:
     """Place a 10-minute hold on slot 1 through the service. Returns the hold id."""
-    outcome = HoldService(uow).place_hold(user_id, 1, "someone@example.com")
+    outcome = HoldService(uow).place_hold(user_id, 1, "someone@example.com", new_key())
     assert outcome.ok, outcome.code
     return int(outcome.value.hold_id.removeprefix("hold_"))
 
@@ -90,7 +96,7 @@ def test_a_confirmed_reservation_never_expires():
 
 def test_an_abandoned_hold_frees_the_slot_without_the_worker(uow, clock):
     alice_hold = hold_for(uow, ALICE)
-    assert HoldService(uow).place_hold(BOB, 1, "bob@example.com").code == "slot_unavailable"
+    assert HoldService(uow).place_hold(BOB, 1, "bob@example.com", new_key()).code == "slot_unavailable"
 
     clock.now += timedelta(minutes=10)  # Alice walks away; the worker is not running
 

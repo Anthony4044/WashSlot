@@ -8,6 +8,7 @@ What these tests can't show is the lock: the memory double has none. tests/test_
 proves the lock on the real database.
 """
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 
@@ -19,6 +20,11 @@ from app.services.holds import HoldService
 NOW = datetime(2026, 11, 20, 22, 0, tzinfo=UTC)
 ALICE, BOB = 1, 2
 SLOT = 1
+
+
+def new_key() -> str:
+    """A fresh Idempotency-Key: every call here is a new attempt, never a retry (US-5.2)."""
+    return str(uuid4())
 
 
 class Clock:
@@ -67,7 +73,7 @@ def stored(uow) -> list[tuple[int, ReservationStatus]]:
 # --- success ----------------------------------------------------------------------------------
 
 def test_place_hold_returns_the_new_hold(service, uow):
-    outcome = service.place_hold(ALICE, SLOT, "alice@example.com")
+    outcome = service.place_hold(ALICE, SLOT, "alice@example.com", new_key())
 
     assert outcome.ok
     body = outcome.value.model_dump(mode="json", by_alias=True)  # exactly what the API will send
@@ -81,14 +87,14 @@ def test_place_hold_returns_the_new_hold(service, uow):
 
 
 def test_the_hold_lasts_hold_minutes(uow):
-    outcome = HoldService(uow, hold_minutes=15).place_hold(ALICE, SLOT, "alice@example.com")
+    outcome = HoldService(uow, hold_minutes=15).place_hold(ALICE, SLOT, "alice@example.com", new_key())
     assert outcome.value.expires_at == NOW + timedelta(minutes=15)
 
 
 # --- refusals ---------------------------------------------------------------------------------
 
 def test_unknown_slot_is_not_found(service):
-    outcome = service.place_hold(ALICE, 999, "alice@example.com")
+    outcome = service.place_hold(ALICE, 999, "alice@example.com", new_key())
     assert not outcome.ok
     assert outcome.code == "not_found"
 
@@ -96,14 +102,14 @@ def test_unknown_slot_is_not_found(service):
 @pytest.mark.parametrize("taken_by", [ReservationStatus.HELD, ReservationStatus.CONFIRMED])
 def test_a_taken_slot_is_slot_unavailable_and_nothing_is_saved(service, uow, taken_by):
     put_reservation(uow, BOB, taken_by)
-    outcome = service.place_hold(ALICE, SLOT, "alice@example.com")
+    outcome = service.place_hold(ALICE, SLOT, "alice@example.com", new_key())
     assert outcome.code == "slot_unavailable"
     assert stored(uow) == [(BOB, taken_by)]  # Alice's hold was never written
 
 
 def test_holding_my_own_slot_again_is_slot_unavailable(service):
-    assert service.place_hold(ALICE, SLOT, "alice@example.com").ok
-    assert service.place_hold(ALICE, SLOT, "alice@example.com").code == "slot_unavailable"
+    assert service.place_hold(ALICE, SLOT, "alice@example.com", new_key()).ok
+    assert service.place_hold(ALICE, SLOT, "alice@example.com", new_key()).code == "slot_unavailable"
 
 
 # --- expiry: the database clock decides --------------------------------------------------------
@@ -112,7 +118,7 @@ def test_an_expired_hold_on_the_slot_allows_a_new_hold(service, uow, clock):
     put_reservation(uow, BOB, ReservationStatus.HELD, expires_in_min=10)
     clock.now = NOW + timedelta(minutes=11)  # Bob's 10 minutes ran out a minute ago
 
-    outcome = service.place_hold(ALICE, SLOT, "alice@example.com")
+    outcome = service.place_hold(ALICE, SLOT, "alice@example.com", new_key())
 
     assert outcome.ok
     # Bob's hold was marked EXPIRED and saved in the same unit of work as Alice's new hold.
@@ -123,14 +129,14 @@ def test_a_hold_counts_until_the_last_second(service, uow, clock):
     put_reservation(uow, BOB, ReservationStatus.HELD, expires_in_min=10)
 
     clock.now = NOW + timedelta(minutes=10) - timedelta(seconds=1)  # one second left
-    assert service.place_hold(ALICE, SLOT, "alice@example.com").code == "slot_unavailable"
+    assert service.place_hold(ALICE, SLOT, "alice@example.com", new_key()).code == "slot_unavailable"
 
     clock.now = NOW + timedelta(minutes=10)  # exactly at expiresAt: it has lapsed
-    assert service.place_hold(ALICE, SLOT, "alice@example.com").ok
+    assert service.place_hold(ALICE, SLOT, "alice@example.com", new_key()).ok
 
 
 @pytest.mark.parametrize("ended", [ReservationStatus.EXPIRED, ReservationStatus.CANCELLED,
                                    ReservationStatus.NO_SHOW])
 def test_ended_reservations_do_not_block_a_new_hold(service, uow, ended):
     put_reservation(uow, BOB, ended)
-    assert service.place_hold(ALICE, SLOT, "alice@example.com").ok
+    assert service.place_hold(ALICE, SLOT, "alice@example.com", new_key()).ok

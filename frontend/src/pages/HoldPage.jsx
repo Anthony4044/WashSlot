@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api.js'
 import { getEmail, isLoggedIn } from '../auth.js'
-import { formatSlotTime, placeHold } from '../holds.js'
+import { formatSlotTime, isUnknownOutcome, newAttemptKey, placeHold } from '../holds.js'
 
 /**
  * /slots/:slotId/hold (US-4.1): show the slot, ask where to send the confirmation, "Hold this slot".
@@ -17,6 +17,11 @@ import { formatSlotTime, placeHold } from '../holds.js'
  *   <Link to={`/slots/${slotId}/hold`}
  *         state={{ laundromatId, laundromatName, machineLabel, machineType, startTime, endTime }}>
  * The contract has no "get one slot" operation, so if you open this URL directly we only know the slot id.
+ *
+ * Safe retries (US-5.2): one attempt = this slot + this email, named by one Idempotency-Key. The key
+ * is kept until the attempt gets a final answer, so "Try again" after a network error or a 5xx sends
+ * the SAME key, and the server replays the first hold if it did go through: never two holds.
+ * Changing the email starts a new attempt with a new key.
  */
 export function HoldPage() {
   const { slotId } = useParams()
@@ -27,6 +32,8 @@ export function HoldPage() {
   const [taken, setTaken] = useState(false) // true after a 409
   const [error, setError] = useState(null) // any other error, as a readable message
   const [busy, setBusy] = useState(false) // while the request is in flight (no double clicks)
+  const [canRetry, setCanRetry] = useState(false) // the last failure was the network or the server
+  const attempt = useRef(null) // { email, key } of the attempt in progress, or null
 
   const backLink = slot?.laundromatId ? `/laundromats/${slot.laundromatId}` : '/laundromats'
   const inThePast = slot?.startTime && Date.parse(slot.startTime) <= Date.now()
@@ -39,10 +46,19 @@ export function HoldPage() {
     }
     setBusy(true)
     setError(null)
+    if (attempt.current?.email !== email) {
+      attempt.current = { email, key: newAttemptKey() } // a new attempt: first click, or a new email
+    }
     try {
-      const hold = await placeHold(slotId, email) // 201: the slot is ours for 10 minutes
+      // 201 (or the replay of an earlier 201): the slot is ours for 10 minutes
+      const hold = await placeHold(slotId, email, attempt.current.key)
       navigate(`/holds/${hold.holdId}`)
     } catch (err) {
+      const retryable = isUnknownOutcome(err)
+      if (!retryable) {
+        attempt.current = null // a final answer: the next click is a new attempt
+      }
+      setCanRetry(retryable)
       if (err instanceof ApiError && err.code === 'slot_unavailable') {
         setTaken(true) // 409: past, or someone else holds / reserved it
       } else {
@@ -50,6 +66,11 @@ export function HoldPage() {
       }
       setBusy(false)
     }
+  }
+
+  function onEmailChange(value) {
+    setEmail(value)
+    setCanRetry(false) // a different email is a different attempt, so this is no longer a retry
   }
 
   // Holding needs a token (reservations:write). Send the user to log in, then back here.
@@ -121,18 +142,19 @@ export function HoldPage() {
             autoComplete="email"
             required
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => onEmailChange(e.target.value)}
           />
         </div>
 
         {error && (
           <p className="form-error" role="alert">
             {error}
+            {canRetry && ' Trying again is safe: you will never get two holds.'}
           </p>
         )}
 
         <button type="submit" className="button" disabled={busy}>
-          {busy ? 'Holding…' : 'Hold this slot'}
+          {busy ? 'Holding…' : canRetry ? 'Try again' : 'Hold this slot'}
         </button>
       </form>
 

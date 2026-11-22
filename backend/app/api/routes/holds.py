@@ -49,13 +49,15 @@ def place_hold(slot_id: str, body: HoldRequest, user: Writer, idempotency_key: I
     Idempotency-Key header (422 idempotency_key_required), then the body (422 invalid_request).
     Only a request that passes all three reaches the service.
 
-    Ch. 3: NOT safe and not naturally idempotent, which is why the key is required. US-4.1 only
-    requires it; US-5.2 will pass `idempotency_key` to the service to store and replay the outcome.
+    Ch. 3: NOT safe and not naturally idempotent, which is why the key is required. The service
+    stores each attempt's outcome under the key (US-5.2): a repeat gets the same status and body
+    back, with Idempotency-Replayed: true, and never a second hold.
     """
     # "slot_5" -> 5. A malformed or wrong-prefix id ("abc", "lm_5") raises NotFound -> 404 not_found.
+    # (That 404 happens before the service, so it is not stored: repeating it gives the same 404 anyway.)
     # The customer is `user.id`, from the verified token: never from the body.
-    outcome = service.place_hold(user.id, parse_id(SLOT, slot_id), body.confirmation_email)
-    return to_response(outcome, 201)  # Outcome -> 201 + Hold, or {"error": code} with its status
+    outcome = service.place_hold(user.id, parse_id(SLOT, slot_id), body.confirmation_email, idempotency_key)
+    return to_response(outcome, 201)  # Outcome -> 201 + Hold, or {"error": code}; a replay adds the header
 
 
 @router.get("/holds/{hold_id}", response_model=HoldDto, responses=AUTH_ERRORS, summary="Fetch one of my holds")

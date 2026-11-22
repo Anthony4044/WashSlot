@@ -17,11 +17,13 @@ The worker persists no-shows so attendants can release the machines to walk-ins.
 import logging
 import time
 
+from app.core.config import get_settings
 from app.core.email import get_email_sender
 from app.data.database import get_session_factory
 from app.data.unit_of_work import SqlAlchemyUnitOfWork
 from app.services.emails import EmailService
 from app.services.holds import HoldService
+from app.services.idempotency import delete_old_records
 from app.services.reservations import ReservationService
 from app.services.unit_of_work import UnitOfWorkFactory
 
@@ -51,11 +53,19 @@ def mark_no_shows(uow_factory: UnitOfWorkFactory) -> None:
         log.info("marked %d no-show(s)", count)
 
 
+def forget_old_idempotency_keys(uow_factory: UnitOfWorkFactory) -> None:
+    """US-5.2: delete Idempotency-Key records older than IDEMPOTENCY_RETENTION_HOURS (at least 24)."""
+    count = delete_old_records(uow_factory, get_settings().idempotency_retention_hours)
+    if count:
+        log.info("forgot %d idempotency key(s)", count)
+
+
 # (name, function, run every N seconds). Add one line per job.
 JOBS = [
     ("expire holds", expire_holds, 30),
     ("mark no-shows", mark_no_shows, 30),
     ("send emails", send_emails, 5),
+    ("forget old idempotency keys", forget_old_idempotency_keys, 600),
 ]
 
 
