@@ -104,3 +104,13 @@ def _replay(earlier: IdempotencyRecord, attempt: Attempt, dto_type: type[Dto]) -
     if earlier.error_code is not None:
         return Outcome(ok=False, code=earlier.error_code, replayed=True)
     return Outcome(ok=True, value=dto_type.model_validate(earlier.response_body), replayed=True)
+
+
+def delete_old_records(uow_factory: UnitOfWorkFactory, retention_hours: int) -> int:
+    """Worker job (T.5.2.5): forget keys older than `retention_hours`. Returns how many were deleted.
+
+    The contract promises keys are kept at least 24 hours, so a younger key is never deleted: the
+    cut-off uses the database clock (the same clock that stamped created_at), not the worker's.
+    """
+    with uow_factory() as uow:
+        return uow.idempotency.delete_older_than(retention_hours)
