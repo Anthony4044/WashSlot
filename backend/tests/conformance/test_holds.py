@@ -4,6 +4,8 @@ The full flow finds a free slot and holds it through the API, so it needs browsi
 placing a hold (US-4.1) and seeded laundromats. Until those exist it is skipped, and says why.
 """
 import uuid
+from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 
 import pytest
 
@@ -58,6 +60,22 @@ def test_hold_then_confirm_then_confirm_again(api, customer):
 
     again = api.post(f"/holds/{hold_id}/confirm", headers=auth(customer))
     assert again.status_code == 200 and check(again, CONFIRM, "post") == reservation
+
+
+def test_a_new_hold_lasts_ten_minutes_by_the_servers_clock(api, customer):
+    """Expiry, from the outside (US-8.4). We can't wait 10 minutes here: tests/test_expiry.py moves a
+    fake clock past expiresAt. This checks the window the contract promises, by the server's own clock."""
+    r = api.post(f"/slots/{find_free_slot(api)}/holds", json={"confirmationEmail": customer["email"]},
+                 headers={**auth(customer), "Idempotency-Key": str(uuid.uuid4())})
+    assert r.status_code == 201, r.text
+    hold = check(r, "/slots/{slotId}/holds", "post")
+
+    left = datetime.fromisoformat(hold["expiresAt"]) - parsedate_to_datetime(r.headers["date"])
+    assert timedelta(minutes=9, seconds=30) <= left <= timedelta(minutes=10, seconds=30), left
+
+    again = api.get(f"/holds/{hold['holdId']}", headers=auth(customer))
+    assert again.status_code == 200
+    assert check(again, GET, "get") == hold  # still HELD, and the deadline doesn't move
 
 
 def test_someone_elses_hold_is_404(api, customer):

@@ -19,14 +19,6 @@ EVERY_OPERATION = [("get", LIST, "/operator/notifications?status=FAILED"),
 IDS = ["listOperatorNotifications", "retryNotification"]
 
 
-@pytest.fixture
-def operator(api) -> dict[str, str]:
-    r = api.post("/auth/login", json={"email": "operator@example.com", "password": "operator123"})
-    if r.status_code != 200:
-        pytest.skip("no seeded operator@example.com: run scripts/seed_users.py and seed_laundromats.py")
-    return {"Authorization": f"Bearer {r.json()['accessToken']}"}
-
-
 @pytest.mark.parametrize(("method", "path", "url"), EVERY_OPERATION, ids=IDS)
 def test_no_token_is_401(api, method, path, url):
     check_error(api.request(method.upper(), url), path, method, 401, "missing_token")
