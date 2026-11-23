@@ -7,6 +7,7 @@ Laundromat reservation service: reserve a specific washer or dryer in advance, n
 - Front end: [frontend/README.md](frontend/README.md)
 - **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Features + how to test:** [docs/FEATURES.md](docs/FEATURES.md)
+- **Proof tests (which test proves which guarantee):** [docs/TESTING.md](docs/TESTING.md)
 - **Milestone 2 demo script:** [docs/MILESTONE2_DEMO.md](docs/MILESTONE2_DEMO.md)
 - Coding rules: [docs/CODING_GUIDE.md](docs/CODING_GUIDE.md)
 - Plan: [PROJECT_PLAN.md](PROJECT_PLAN.md)
@@ -47,6 +48,11 @@ and confirm the Neon connection string in `backend/.env`.
 Use `docker compose down` to stop the stack and `docker compose up --build`
 to rebuild after changing the source.
 
+To check that bookings survive a restart, run `python scripts/restart_check.py`.
+It books a slot, deletes and recreates every container, and reads the booking
+back. Each run leaves a `restart-check-…@example.com` customer and a cancelled
+booking in the database that `backend/.env` points at.
+
 ### Local development
 
 See the [front-end setup](frontend/README.md) for Vite and the
@@ -57,6 +63,8 @@ See the [front-end setup](frontend/README.md) for Vite and the
 Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 
 - **Backend:** `ruff check .` and `pytest` (database tests skip unless `TEST_DATABASE_URL` is set)
+- **Conformance:** the current and the frozen v1.0 conformance suites, against the API on a fresh, seeded Postgres
+- **Restart check:** `scripts/restart_check.py` on the Compose stack, with Postgres in a container (`compose.ci.yaml`)
 - **Frontend:** `npm ci` and `npm run build`
 
 ## Repo conventions
