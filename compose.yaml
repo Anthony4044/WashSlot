@@ -1,0 +1,42 @@
+x-backend: &backend
+  build: ./backend
+  env_file: ./backend/.env
+
+services:
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+
+  api:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      JWT_PRIVATE_KEY_FILE: keys/jwt_private.pem
+      JWT_PUBLIC_KEY_FILE: keys/jwt_public.pem
+    volumes:
+      - jwt_keys:/app/keys
+    command:
+      - /bin/sh
+      - -c
+      - python scripts/generate_keys.py && exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  worker:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "worker.py"]
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:5173:80"
+
+volumes:
+  jwt_keys:
