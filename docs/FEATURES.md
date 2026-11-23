@@ -210,6 +210,18 @@ The slow way to fail an email: `EMAIL_FAKE_FAILURES=6` makes all six tries fail 
 
 ---
 
+## 15. Proof tests and persistence (US-8.4)
+
+**What:** The five guarantees (concurrency, idempotency, auth, expiry and outbox) are each tested at the domain, service and conformance levels. [TESTING.md](TESTING.md) maps every guarantee to its tests. `scripts/restart_check.py` books a slot, deletes and recreates every container, and checks that the booking is still there. CI runs it on every pull request with `compose.ci.yaml`, which adds a Postgres container with a named volume.
+
+| How to test (terminal) | How to test (pytest) | Where in code |
+|---|---|---|
+| From the repo root, with Docker running: `python scripts/restart_check.py`. It ends with `PASS: the booking survived the restart`. It uses the database in `backend/.env` and cancels its booking at the end | `pytest tests/test_domain_outbox.py tests/test_service_locks.py` · With a running server: `CONFORMANCE_BASE_URL=http://localhost:8000 pytest tests/conformance/test_concurrency.py tests/conformance/test_outbox.py tests/conformance/test_token_tampering.py` | `scripts/restart_check.py` · `compose.ci.yaml` · CI: `restart-check` job (`.github/workflows/ci.yml`) · Map: `docs/TESTING.md` |
+
+**Demo line:** “Ten customers click Hold on the same slot at the same moment over HTTP: one gets 201 and nine get 409. Then we delete every container, and the booking is still there.”
+
+---
+
 ## End-to-end happy path (all features)
 
 1. Seed: `seed_users.py` + `seed_laundromats.py`

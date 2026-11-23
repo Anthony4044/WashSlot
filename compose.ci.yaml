@@ -1,0 +1,37 @@
+# CI's restart check (US-8.4): Postgres in a container instead of Neon, its files in the named volume
+# db_data. `docker compose down` deletes the container but keeps the volume, so the restart check also
+# shows the database's data surviving its own container. Add it on top of compose.yaml:
+#   COMPOSE_FILE=compose.yaml:compose.ci.yaml              (PowerShell: $env:COMPOSE_FILE="compose.yaml;compose.ci.yaml")
+# `environment` wins over backend/.env, so DATABASE_URL points here even when .env names Neon.
+x-local-db: &local-db
+  DATABASE_URL: postgresql://washslot:washslot@db:5432/washslot
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: washslot
+      POSTGRES_PASSWORD: washslot
+      POSTGRES_DB: washslot
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U washslot -d washslot"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *local-db
+
+  api:
+    environment: *local-db
+
+  worker:
+    environment: *local-db
+
+volumes:
+  db_data:

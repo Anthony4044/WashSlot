@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from tests.conformance.users import PASSWORD, unique_email
+from tests.conformance.users import new_customer
 
 HERE = Path(__file__).resolve().parent
 BASE_URL = os.environ.get("CONFORMANCE_BASE_URL", "").rstrip("/")
@@ -41,7 +41,13 @@ def customer(api) -> dict[str, str]:
 
     Use it as headers: api.get("/me/reservations", headers={"Authorization": customer["Authorization"]}).
     """
-    email = unique_email()
-    assert api.post("/auth/register", json={"email": email, "password": PASSWORD}).status_code == 201
-    token = api.post("/auth/login", json={"email": email, "password": PASSWORD}).json()["accessToken"]
-    return {"email": email, "Authorization": f"Bearer {token}"}
+    return new_customer(api)
+
+
+@pytest.fixture
+def operator(api) -> dict[str, str]:
+    """Headers for the seeded operator@example.com (scripts/seed_users.py), or skip and say why."""
+    r = api.post("/auth/login", json={"email": "operator@example.com", "password": "operator123"})
+    if r.status_code != 200:
+        pytest.skip("no seeded operator@example.com: run scripts/seed_users.py and seed_laundromats.py")
+    return {"Authorization": f"Bearer {r.json()['accessToken']}"}

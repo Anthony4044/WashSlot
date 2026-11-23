@@ -4,8 +4,10 @@ from datetime import date, timedelta
 import pytest
 
 
-def find_free_slot(api) -> str:
+def find_free_slot(api, laundromat_ids: set[str] | None = None) -> str:
     """The id of some AVAILABLE slot in the next 7 days, found by browsing like a customer would.
+
+    laundromat_ids: look only in these laundromats (the ones an operator runs, say).
 
     Needs browsing (US-3.1) and seeded laundromats. Until both exist, the calling test is skipped
     and says why.
@@ -14,6 +16,8 @@ def find_free_slot(api) -> str:
     if listing.status_code == 404:
         pytest.skip("GET /laundromats is not there yet (US-3.1)")
     for laundromat in listing.json()["laundromats"]:
+        if laundromat_ids is not None and laundromat["laundromatId"] not in laundromat_ids:
+            continue
         for days in range(1, 8):
             day = (date.today() + timedelta(days=days)).isoformat()
             grid = api.get(f"/laundromats/{laundromat['laundromatId']}/slots", params={"date": day}).json()
