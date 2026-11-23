@@ -197,6 +197,19 @@ The slow way to fail an email: `EMAIL_FAKE_FAILURES=6` makes all six tries fail 
 
 ---
 
+## 14. Contract check and a backward-compatible change (US-8.3)
+
+**What:** CI compares FastAPI's generated `/docs` with `contract/openapi.yaml` (same version, paths, methods, status codes, and the same fields and required fields in every body) and fails on any drift. Contract **v1.1** adds the optional `notificationPreference` (`EMAIL` or `SMS`, `EMAIL` when left out) to the hold request. It is accepted but not used yet: the confirmation still goes by email. v1.0 is frozen in `contract/v1.0/openapi.yaml` with its conformance suite in `tests/conformance_v1_0/`, and CI runs that old suite against today's server.
+
+| How to test (browser) | How to test (API / pytest) | Where in code |
+|---|---|---|
+| `/docs` → `POST /slots/{slot_id}/holds` shows `notificationPreference`; no `{"detail"}` 422 on routes that can't send one | `pytest tests/test_generated_openapi.py` · `pytest tests/test_place_hold_api.py -k preference` | Check: `tests/test_generated_openapi.py` · `/docs` fix: `without_fastapi_422s` (`app/main.py`) |
+| — | Both suites against a running server: `CONFORMANCE_BASE_URL=http://localhost:8000 pytest tests/conformance tests/conformance_v1_0` | Field: `HoldRequest.notification_preference` (`app/api/schemas/holds.py`) · CI: `conformance` job (`.github/workflows/ci.yml`) |
+
+**Demo line:** “An old v1.0 client never sends `notificationPreference`, and its tests still pass against v1.1. If we made the field required, the v1.0 suite would fail in CI.”
+
+---
+
 ## End-to-end happy path (all features)
 
 1. Seed: `seed_users.py` + `seed_laundromats.py`
