@@ -36,7 +36,21 @@ def create_app() -> FastAPI:
     app.include_router(reservations.router)
     app.include_router(operator.router)
 
+    app.openapi = lambda: without_fastapi_422s(FastAPI.openapi(app))
     return app
+
+
+def without_fastapi_422s(schema: dict) -> dict:
+    """[T.8.3.1] Drop the 422 FastAPI documents on every route with a parameter.
+
+    It shows FastAPI's {"detail": [...]} body, which we never send (errors.py sends {"error": "invalid_request"}).
+    Routes that really answer 422 list it themselves, with ErrorResponse, so theirs stays.
+    """
+    for item in schema["paths"].values():
+        for op in item.values():
+            if "HTTPValidationError" in str(op["responses"].get("422")):
+                del op["responses"]["422"]
+    return schema
 
 
 app = create_app()
