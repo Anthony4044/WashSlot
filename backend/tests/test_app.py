@@ -1,10 +1,12 @@
 """Interface-layer wiring that needs no database: error format and catalog, CORS, settings, DTOs."""
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
 
 from app.api.errors import CATALOG, ApiError
 from app.api.responses import to_response
 from app.api.schemas.base import RequestModel, ResponseModel
 from app.core.config import BACKEND_DIR, Settings, to_sqlalchemy_url
+from app.data import database
 from app.domain.errors import AlreadyCancelled, DomainError, HoldExpired, NotFound, SlotUnavailable
 from app.main import create_app
 from app.services.outcome import Outcome
@@ -40,6 +42,31 @@ def test_unknown_route_uses_error_format(api_client):
     r = api_client.get("/does-not-exist")
     assert r.status_code == 404
     assert r.json() == {"error": "not_found"}
+
+
+def test_readiness_requires_configured_database(api_client, monkeypatch):
+    monkeypatch.setattr(database, "get_settings", lambda: Settings(database_url=None))
+    response = api_client.get("/health/ready")
+    assert response.status_code == 503
+    assert response.json() == {"error": "service_unavailable"}
+
+
+def test_liveness_survives_database_outage(api_client, monkeypatch):
+    settings = Settings(database_url="postgresql://localhost/washslot")
+    monkeypatch.setattr(database, "get_settings", lambda: settings)
+
+    class OfflineEngine:
+        def connect(self):
+            raise OperationalError(None, None, OSError("database is offline"))
+
+    monkeypatch.setattr(database, "_get_probe_engine", lambda _: OfflineEngine())
+    live = api_client.get("/health/live")
+    assert live.status_code == 200
+    assert live.json() == {"status": "ok"}
+
+    ready = api_client.get("/health/ready")
+    assert ready.status_code == 503
+    assert ready.json() == {"error": "service_unavailable"}
 
 
 def test_domain_error_is_mapped_by_the_interface_layer():

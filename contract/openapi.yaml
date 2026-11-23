@@ -39,6 +39,8 @@ servers:
     description: Local development
 
 tags:
+  - name: health
+    description: Public probes for process liveness and database readiness.
   - name: auth
     description: Accounts and access tokens.
   - name: browse
@@ -53,6 +55,46 @@ tags:
       changes their own laundromats: anyone else's is 404 not_found, as if it did not exist.
 
 paths:
+  /health/live:
+    get:
+      operationId: live
+      tags: [health]
+      summary: Check that the API process is running
+      description: Safe to retry. This probe does not require a database connection.
+      security: []
+      responses:
+        "200":
+          description: The API process can serve requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        default:
+          $ref: "#/components/responses/ServerError"
+
+  /health/ready:
+    get:
+      operationId: ready
+      tags: [health]
+      summary: Check that the API can reach PostgreSQL
+      description: Safe to retry after a timeout or database outage.
+      security: []
+      responses:
+        "200":
+          description: PostgreSQL answered a probe query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: service_unavailable. PostgreSQL is not configured or could not answer the probe query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/ServerError"
+
   /auth/register:
     post:
       operationId: register
@@ -822,6 +864,15 @@ components:
             $ref: "#/components/schemas/Error"
 
   schemas:
+    HealthStatus:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+
     LaundromatList:
       type: object
       required: [laundromats]

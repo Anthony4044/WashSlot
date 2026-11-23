@@ -13,23 +13,44 @@ Laundromat reservation service: reserve a specific washer or dryer in advance, n
 
 ## How to run
 
-Commands must be run **inside** `frontend/` or `backend/` — there is no `package.json` at the repo root.
+### Docker Compose
 
-### Front end
+Install Docker with Compose v2. From a fresh clone, copy `backend/.env.example` to
+`backend/.env` (or use the team's existing `.env`). Set `DATABASE_URL` to your
+direct Neon PostgreSQL connection string and keep `sslmode=require`. Keep
+`backend/.env` private.
 
-```bash
-cd frontend
-npm install
-npm run dev
+Run this command from the repository root.
+
+```sh
+docker compose up
 ```
 
-Open http://localhost:5173/
+Compose builds the images on the first run and applies `alembic upgrade head`
+before starting the API and worker. PostgreSQL stays on Neon. The API generates
+its JWT signing keys on first startup and keeps them in the `jwt_keys` Docker
+volume.
 
-If you see `Port 5173 is already in use`, either open that URL (a server is already running) or stop the old process and run `npm run dev` again.
+Open the [front end](http://localhost:5173/) or the [API docs](http://localhost:8000/docs).
+Use a second terminal to check for HTTP 200 from both probes.
 
-### Back end
+```sh
+curl -i http://localhost:8000/health/live
+curl -i http://localhost:8000/health/ready
+```
 
-See [backend/README.md](backend/README.md) (`uvicorn` on http://localhost:8000).
+On Windows PowerShell, use `curl.exe`. Liveness checks the API process.
+Readiness checks PostgreSQL and returns HTTP 503 when the database is unavailable.
+If startup stops at the migration step, check `docker compose logs migrate`
+and confirm the Neon connection string in `backend/.env`.
+
+Use `docker compose down` to stop the stack and `docker compose up --build`
+to rebuild after changing the source.
+
+### Local development
+
+See the [front-end setup](frontend/README.md) for Vite and the
+[back-end setup](backend/README.md) for Uvicorn, the worker, and seed data.
 
 ## CI
 
