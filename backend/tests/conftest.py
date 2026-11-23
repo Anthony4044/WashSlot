@@ -14,6 +14,8 @@ Database tests are skipped if TEST_DATABASE_URL is not set.
 We empty tables instead of rolling back because concurrency tests need several connections that
 really commit, exactly like production.
 """
+import io
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -26,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_access_tokens, get_password_hasher, get_uow_factory
 from app.core.config import get_settings, to_sqlalchemy_url
+from app.core.logging import JsonFormatter
 from app.core.passwords import PasswordHasher
 from app.core.tokens import AccessTokens, load_private_key, load_public_key
 from app.data.database import make_engine, make_session_factory
@@ -42,6 +45,18 @@ from scripts.generate_keys import generate_key_pair
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 TEST_ISSUER = "https://auth.washslot.test"
 TEST_AUDIENCE = "https://api.washslot.test"
+
+
+@pytest.fixture
+def json_logs(caplog):
+    caplog.set_level(logging.INFO)
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(JsonFormatter())
+    logging.getLogger().addHandler(handler)
+    yield stream
+    logging.getLogger().removeHandler(handler)
+    handler.close()
 
 
 @pytest.fixture(scope="session")

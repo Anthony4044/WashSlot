@@ -119,7 +119,7 @@ class OperatorService:
             laundromat = _own_laundromat(uow, user_id, laundromat_id)
             if laundromat is None:
                 return Outcome.failure("not_found")
-            machines = {m.id: m for m in uow.machines.list_for_laundromat(laundromat_id)}
+            machines = {m.id: m for m in uow.machines.list_for_laundromat(laundromat_id, lock=True)}
             if machine_ids is None:
                 chosen = [m for m in machines.values() if m.reservable]
             elif all(i in machines for i in machine_ids):

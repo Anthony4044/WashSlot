@@ -80,7 +80,7 @@ class HoldService:
             details = uow.slots.details(slot.id)
         return Outcome.success(hold_dto(hold, details))
 
-    def confirm(self, user_id: int, hold_id: int) -> Outcome:
+    def confirm(self, user_id: int, hold_id: int, *, correlation_id: str | None = None) -> Outcome:
         """HELD and live -> CONFIRMED. Already confirmed -> the same reservation (naturally idempotent).
 
         One unit of work: lock the slot (the aggregate root, never just the reservation row), check
@@ -108,6 +108,7 @@ class HoldService:
                         laundromat_address=laundromat.address if laundromat else "",
                         timezone=laundromat.timezone if laundromat else "UTC",
                         now=now,
+                        correlation_id=correlation_id,
                     ))
         except DomainError as refused:  # raised inside the unit of work, so nothing was written
             return Outcome.failure(refused.code)

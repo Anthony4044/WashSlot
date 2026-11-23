@@ -44,6 +44,10 @@ class SlotRepository(Protocol):
         exist (same machine, same start). Returns how many were really added."""
         ...
 
+    def scheduled_machine_ids(self, machine_ids: list[int], start: datetime, end: datetime) -> set[int]:
+        """Machines that have any slot overlapping this interval, including held or booked slots."""
+        ...
+
 
 class LaundromatRepository(Protocol):
     def list_all(self) -> list[Laundromat]:
@@ -122,8 +126,8 @@ class IdempotencyRepository(Protocol):
 class MachineRepository(Protocol):
     """Machines as the operator manages them (US-7.1)."""
 
-    def list_for_laundromat(self, laundromat_id: int) -> list[Machine]:
-        """Every machine of the laundromat, reservable or not, ordered by label."""
+    def list_for_laundromat(self, laundromat_id: int, *, lock: bool = False) -> list[Machine]:
+        """Every machine, ordered by label. lock=True serializes slot generation for these machines."""
         ...
 
     def get(self, machine_id: int) -> Machine | None: ...

@@ -19,18 +19,26 @@ import time
 
 from app.core.config import get_settings
 from app.core.email import get_email_sender
+from app.core.logging import configure_logging
 from app.data.database import get_session_factory
 from app.data.unit_of_work import SqlAlchemyUnitOfWork
 from app.services.emails import EmailService
 from app.services.holds import HoldService
 from app.services.idempotency import delete_old_records
 from app.services.reservations import ReservationService
+from app.services.slot_generation import maintain_slot_window
 from app.services.unit_of_work import UnitOfWorkFactory
 
 log = logging.getLogger("worker")
 
 
 # --- The jobs -------------------------------------------------------------------------------
+
+def generate_slots(uow_factory: UnitOfWorkFactory) -> None:
+    count = maintain_slot_window(uow_factory)
+    if count:
+        log.info("created %d upcoming slot(s)", count)
+
 
 def expire_holds(uow_factory: UnitOfWorkFactory) -> None:
     """US-5.1: holds nobody confirmed in 10 minutes become EXPIRED."""
@@ -62,6 +70,7 @@ def forget_old_idempotency_keys(uow_factory: UnitOfWorkFactory) -> None:
 
 # (name, function, run every N seconds). Add one line per job.
 JOBS = [
+    ("generate upcoming slots", generate_slots, 3600),
     ("expire holds", expire_holds, 30),
     ("mark no-shows", mark_no_shows, 30),
     ("send emails", send_emails, 5),
@@ -87,7 +96,7 @@ def run_due_jobs(uow_factory: UnitOfWorkFactory, next_run: dict[str, float], now
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    configure_logging()
     session_factory = get_session_factory()  # DATABASE_URL from backend/.env
 
     def uow_factory() -> SqlAlchemyUnitOfWork:

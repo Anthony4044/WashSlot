@@ -28,6 +28,11 @@ sends confirmation emails, persists no-shows, and clears idempotency keys after 
 have no check-in at least 15 minutes after their start. On **Today**, use **Refresh bookings**
 to see the new status. The API checks the deadline on every first check-in.
 
+On startup and hourly, the worker fills empty machine-days in a rolling seven-day
+window with one-hour slots from 08:00 to 20:00 in each laundromat's time zone.
+It generates future slots for reservable machines and skips machine-days that
+already have slots, including custom operator schedules and existing bookings.
+
 Demo accounts (`scripts/seed_users.py`, the only way to create an operator):
 
 | Email | Password | Role |
@@ -35,6 +40,28 @@ Demo accounts (`scripts/seed_users.py`, the only way to create an operator):
 | `alice@example.com` | `customer123` | CUSTOMER |
 | `bob@example.com` | `customer123` | CUSTOMER |
 | `operator@example.com` | `operator123` | OPERATOR |
+
+## Request tracing
+
+The API writes JSON logs with a `correlationId` field. Each response includes
+`X-Correlation-ID`. Supply 1 to 64 visible ASCII characters to choose the ID,
+or let the API generate a UUID. Request logs include the method, path, status,
+and elapsed milliseconds.
+
+```sh
+curl -i -H "X-Correlation-ID: booking-demo" http://localhost:8000/health/live
+```
+
+On Windows PowerShell, use `curl.exe`.
+
+When a hold is confirmed, its request ID is saved with the confirmation email in
+the outbox. The worker uses that ID for sending, failures, and subsequent retries.
+Worker JSON logs include `outboxId`, `reservationId`, and the attempt number.
+Existing outbox rows with no ID receive a stable `outbox-<id>` when claimed.
+
+To trace a booking, send `X-Correlation-ID: booking-demo` with its
+`POST /holds/{holdId}/confirm` request, then inspect `docker compose logs api worker`.
+Find `"correlationId": "booking-demo"` in the API request log and worker delivery logs.
 
 ## Test
 

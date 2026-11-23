@@ -14,6 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.logging import correlation_context
 from app.domain.errors import DomainError
 
 log = logging.getLogger(__name__)
@@ -91,6 +92,10 @@ def register_error_handlers(app: FastAPI) -> None:
         return error_response("invalid_request")
 
     @app.exception_handler(Exception)
-    async def _unexpected(_: Request, exc: Exception):
-        log.exception("Unhandled error", exc_info=exc)
-        return error_response("internal_error")
+    async def _unexpected(request: Request, exc: Exception):
+        # ServerErrorMiddleware runs outside user middleware, after its context has been reset.
+        value = getattr(request.state, "correlation_id", None)
+        with correlation_context(value):
+            log.exception("Unhandled error", exc_info=exc)
+        headers = {"X-Correlation-ID": value} if value else None
+        return error_response("internal_error", headers)
