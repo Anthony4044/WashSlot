@@ -78,6 +78,12 @@ class MemorySlotRepository:
                 self._next_reservation_id += 1
         self._slots[slot.id] = copy.deepcopy(slot)
 
+    def scheduled_machine_ids(self, machine_ids: list[int], start: datetime, end: datetime) -> set[int]:
+        return {
+            slot.machine_id for slot in self._slots.values()
+            if slot.machine_id in machine_ids and slot.start_time < end and slot.end_time > start
+        }
+
     def expire_all_stale_holds(self) -> int:
         """Same as the SQL UPDATE, using the domain rule on every reservation."""
         now = self._clock()
@@ -252,7 +258,7 @@ class MemoryMachineRepository:
         self._machines[machine.id] = copy.deepcopy(machine)
         return machine
 
-    def list_for_laundromat(self, laundromat_id: int) -> list[Machine]:
+    def list_for_laundromat(self, laundromat_id: int, *, lock: bool = False) -> list[Machine]:
         found = [m for m in self._machines.values() if m.laundromat_id == laundromat_id]
         return [copy.deepcopy(m) for m in sorted(found, key=lambda m: (m.label, m.id))]
 

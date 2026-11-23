@@ -109,6 +109,15 @@ class SqlSlotRepository:
         ).scalar_one_or_none()
         return None if slot_id is None else self.get(slot_id, lock=lock)
 
+    def scheduled_machine_ids(self, machine_ids: list[int], start: datetime, end: datetime) -> set[int]:
+        return set(self.session.scalars(
+            select(MachineSlotRow.machine_id).distinct().where(
+                MachineSlotRow.machine_id.in_(machine_ids),
+                MachineSlotRow.start_time < end,
+                MachineSlotRow.end_time > start,
+            )
+        ))
+
     def save(self, slot: MachineSlot) -> None:
         """Write the aggregate's reservations back: insert new ones, update changed ones."""
         for r in slot.reservations:
@@ -467,12 +476,15 @@ class SqlMachineRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def list_for_laundromat(self, laundromat_id: int) -> list[Machine]:
-        rows = self.session.scalars(
+    def list_for_laundromat(self, laundromat_id: int, *, lock: bool = False) -> list[Machine]:
+        query = (
             select(MachineRow)
             .where(MachineRow.laundromat_id == laundromat_id)
             .order_by(MachineRow.label, MachineRow.id)
-        ).all()
+        )
+        if lock:
+            query = query.with_for_update()
+        rows = self.session.scalars(query).all()
         return [_machine(row) for row in rows]
 
     def get(self, machine_id: int) -> Machine | None:

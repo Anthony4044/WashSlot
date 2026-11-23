@@ -28,6 +28,11 @@ sends confirmation emails, persists no-shows, and clears idempotency keys after 
 have no check-in at least 15 minutes after their start. On **Today**, use **Refresh bookings**
 to see the new status. The API checks the deadline on every first check-in.
 
+On startup and hourly, the worker fills empty machine-days in a rolling seven-day
+window with one-hour slots from 08:00 to 20:00 in each laundromat's time zone.
+It generates future slots for reservable machines and skips machine-days that
+already have slots, including custom operator schedules and existing bookings.
+
 Demo accounts (`scripts/seed_users.py`, the only way to create an operator):
 
 | Email | Password | Role |
