@@ -6,7 +6,7 @@ openapi: 3.1.0
 
 info:
   title: WashSlot
-  version: 1.0.0
+  version: 1.1.0
   description: >
     Reserve a specific washer or dryer at a laundromat in advance. Customers browse free slots,
     hold one for 10 minutes, and confirm it. One machine slot can only ever go to one customer.
@@ -29,6 +29,10 @@ info:
     operations, new optional request fields, new error codes. Removing, renaming or retyping
     anything, or making something required, is breaking and gets a /v2 path and a deprecation
     window. Every published version's conformance suite keeps running in CI.
+
+
+    Changes: v1.1 adds the optional notificationPreference to HoldRequest. v1.0 is frozen in
+    contract/v1.0/openapi.yaml.
 
 servers:
   - url: http://localhost:8000
@@ -1038,6 +1042,13 @@ components:
       properties:
         confirmationEmail:
           $ref: "#/components/schemas/Email"
+        notificationPreference:
+          type: string
+          enum: [EMAIL, SMS]
+          default: EMAIL
+          description: >
+            Added in v1.1, optional. How the customer wants the confirmation; EMAIL when left out.
+            SMS is accepted, but the confirmation is still sent by email until SMS sending exists.
     Hold:
       type: object
       description: A slot held for one customer. The caller is the holder; there is no user id in the body.

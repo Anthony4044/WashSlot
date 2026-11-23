@@ -56,6 +56,10 @@ def operations(doc: dict) -> dict:
     return found
 
 
+def test_same_version():
+    assert GENERATED["info"]["version"] == CONTRACT["info"]["version"]
+
+
 def test_same_operations():
     assert sorted(operations(GENERATED)) == sorted(operations(CONTRACT))
 

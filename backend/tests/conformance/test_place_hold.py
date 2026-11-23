@@ -73,9 +73,16 @@ def test_a_missing_or_bad_idempotency_key_is_422(api, customer, key):
 @pytest.mark.parametrize("body", [
     {"confirmationEmail": "not-an-email"},  # contract: format: email
     {"confirmationEmail": "me@example.com", "userId": "usr_1"},  # contract: additionalProperties: false
+    {"confirmationEmail": "me@example.com", "notificationPreference": "FAX"},  # contract v1.1: EMAIL or SMS
 ])
 def test_a_bad_body_is_422_invalid_request(api, customer, body):
     check_error(hold(api, UNKNOWN, as_customer(customer), body), PLACE_HOLD, "post", 422, "invalid_request")
+
+
+def test_a_notification_preference_is_accepted(api, customer):
+    """Contract v1.1: the body is valid, so the unknown slot is what fails (404, not 422)."""
+    body = {"confirmationEmail": "me@example.com", "notificationPreference": "SMS"}
+    check_error(hold(api, UNKNOWN, as_customer(customer), body), PLACE_HOLD, "post", 404, "not_found")
 
 
 # --- safe retries: the same Idempotency-Key again (US-5.2) -------------------------------------

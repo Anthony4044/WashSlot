@@ -10,7 +10,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title="WashSlot API",
-        version="1.0.0",
+        version="1.1.0",  # the same as contract/openapi.yaml (tests/test_generated_openapi.py checks it)
         description=(
             "Reserve a specific washer or dryer in advance. The authored contract in contract/openapi.yaml "
             "is the source of truth; this generated document must conform to it."
