@@ -1,7 +1,8 @@
 """Database engine and session factory."""
 from functools import lru_cache
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, pool
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings, to_sqlalchemy_url
@@ -22,6 +23,24 @@ def get_engine() -> Engine:
     if not url:
         raise RuntimeError("DATABASE_URL is not set. Copy backend/.env.example to backend/.env.")
     return make_engine(url)
+
+
+@lru_cache
+def _get_probe_engine(url: str) -> Engine:
+    return create_engine(to_sqlalchemy_url(url), poolclass=pool.NullPool, connect_args={"connect_timeout": 3})
+
+
+def postgres_is_ready() -> bool:
+    """Probe a fresh connection with a shorter timeout than the application's database operations."""
+    url = get_settings().database_url
+    if not url:
+        return False
+    try:
+        with _get_probe_engine(url).connect() as connection:
+            connection.exec_driver_sql("SELECT 1")
+    except (SQLAlchemyError, ValueError):
+        return False
+    return True
 
 
 @lru_cache
