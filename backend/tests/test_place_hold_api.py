@@ -115,12 +115,21 @@ def test_keys_of_8_and_128_characters_are_accepted(memory_client, bearer, key):
     assert hold(memory_client, headers={**bearer(ALICE), "Idempotency-Key": key}).status_code == 201
 
 
+@pytest.mark.parametrize("preference", ["EMAIL", "SMS"])
+def test_a_notification_preference_is_accepted(memory_client, bearer, preference):
+    """[T.8.3.2] Added in contract v1.1, optional. Leaving it out is covered by test_hold_a_free_slot."""
+    r = hold(memory_client, headers={**bearer(ALICE), **KEY}, body={**BODY, "notificationPreference": preference})
+    assert r.status_code == 201
+    check(r, PLACE_HOLD, "post")
+
+
 # --- 422: the body ----------------------------------------------------------------------------
 
 @pytest.mark.parametrize("body", [
     {},  # confirmationEmail is required
     {"confirmationEmail": "not-an-email"},
     {"confirmationEmail": "alice@example.com", "userId": "usr_2"},  # strict: can't name another customer
+    {"confirmationEmail": "alice@example.com", "notificationPreference": "FAX"},  # only EMAIL or SMS (v1.1)
 ])
 def test_a_bad_body_is_422_invalid_request(memory_client, bearer, body):
     r = hold(memory_client, headers={**bearer(ALICE), **KEY}, body=body)

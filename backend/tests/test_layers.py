@@ -6,6 +6,8 @@ These tests read the imports so a wrong import fails CI instead of slipping thro
 import ast
 from pathlib import Path
 
+import pytest
+
 APP = Path(__file__).resolve().parents[1] / "app"
 
 
@@ -39,7 +41,8 @@ def test_data_layer_does_not_know_http():
     assert offenders(imports_of("data"), forbidden) == set()
 
 
-def test_conformance_suite_never_imports_the_server():
+@pytest.mark.parametrize("suite", ["conformance", "conformance_v1_0"])
+def test_conformance_suite_never_imports_the_server(suite):
     """It judges the server by the contract alone, so it could judge any implementation."""
-    found = imports_of("conformance", root=Path(__file__).resolve().parent)
+    found = imports_of(suite, root=Path(__file__).resolve().parent)
     assert offenders(found, ("app", "fastapi", "starlette", "sqlalchemy", "tests.conftest")) == set()

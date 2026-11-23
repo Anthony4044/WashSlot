@@ -44,6 +44,56 @@ jobs:
       - name: Pytest
         run: pytest
 
+  # [T.8.3.2] Start the real API on an empty Postgres and judge it by the contract: today's suite, and the
+  # frozen v1.0 suite (an old client) that must keep passing. Plain `pytest` above skips both.
+  conformance:
+    name: Conformance (current + v1.0)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: washslot
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/washslot
+      CONFORMANCE_BASE_URL: http://localhost:8000
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Database, keys and seed data
+        run: |
+          python scripts/generate_keys.py
+          alembic upgrade head
+          python scripts/seed_users.py
+          python scripts/seed_laundromats.py
+
+      - name: Start the API
+        run: |
+          uvicorn app.main:app --port 8000 &
+          for i in $(seq 1 30); do curl -sf http://localhost:8000/laundromats > /dev/null && exit 0; sleep 1; done
+          exit 1
+
+      - name: Conformance suite (current contract)
+        run: pytest tests/conformance
+
+      - name: Conformance suite v1.0 (frozen, must still pass)
+        run: pytest tests/conformance_v1_0
+
   frontend:
     name: Frontend (build)
     runs-on: ubuntu-latest

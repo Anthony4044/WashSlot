@@ -64,7 +64,11 @@ The operator tests use the seeded operator, and the booking tests need some free
 `tests/conformance/test_auth.py` for your endpoint: one test per response you can trigger, each ending in
 `check(...)` or `check_error(...)`. Use the `customer` fixture for a logged-in user.
 
-CI runs the same two commands on every PR (see `.github/workflows/ci.yml`). Without `TEST_DATABASE_URL`, only the non-database tests run there.
+`tests/conformance_v1_0/` is the v1.0 suite, frozen (judged by `contract/v1.0/openapi.yaml`): run it the same way,
+and never edit it. If it fails, a change broke v1.0 clients.
+
+CI runs the same two commands on every PR (see `.github/workflows/ci.yml`). Its `conformance` job starts the API on
+an empty Postgres, seeds it, and runs both conformance suites. Without `TEST_DATABASE_URL`, only the non-database tests run there.
 
 ## Neon
 
