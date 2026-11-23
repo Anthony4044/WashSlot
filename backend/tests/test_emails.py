@@ -7,6 +7,7 @@ What we prove:
 - the Resend client sends the Idempotency-Key and sorts errors into "retry" and "give up"
 - EMAIL_FAKE_FAILURES makes the first N sends fail
 """
+import json
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -14,6 +15,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core.email import EmailSendError, ResendEmailSender
+from app.core.logging import correlation_context, correlation_id
 from app.data.memory import MemorySlotRepository, MemoryUnitOfWork
 from app.data.tables import NotificationOutboxRow
 from app.domain.enums import OutboxStatus, ReservationStatus
@@ -65,7 +67,7 @@ def uow(clock) -> MemoryUnitOfWork:
     return MemoryUnitOfWork(slots=MemorySlotRepository(clock=clock))
 
 
-def confirmed_hold(uow) -> int:
+def confirmed_hold(uow, *, correlation_id=None) -> int:
     """Alice holds slot 1 and confirms it. Returns the reservation id."""
     uow.slots.add(MachineSlot(id=1, machine_id=4, start_time=NOW + timedelta(hours=2),
                               end_time=NOW + timedelta(hours=3)))
@@ -75,7 +77,7 @@ def confirmed_hold(uow) -> int:
                                          expires_at=NOW + timedelta(minutes=10)))
     uow.slots.save(slot)
     hold_id = slot.reservations[0].id
-    assert HoldService(uow).confirm(ALICE, hold_id).ok
+    assert HoldService(uow).confirm(ALICE, hold_id, correlation_id=correlation_id).ok
     return hold_id
 
 
@@ -94,9 +96,10 @@ def test_confirm_writes_one_pending_email(uow):
 
 
 def test_confirming_again_does_not_write_a_second_email(uow):
-    reservation_id = confirmed_hold(uow)
-    assert HoldService(uow).confirm(ALICE, reservation_id).ok  # the naturally idempotent repeat
+    reservation_id = confirmed_hold(uow, correlation_id="original-confirm")
+    assert HoldService(uow).confirm(ALICE, reservation_id, correlation_id="repeat-confirm").ok
     assert len(uow.outbox.messages) == 1
+    assert only_message(uow).correlation_id == "original-confirm"
 
 
 def test_a_refused_confirm_writes_no_email(uow, clock):
@@ -123,6 +126,44 @@ def test_the_worker_sends_the_email_once(uow):
     assert sender.sent[0]["to"] == "alice@example.com"
     assert sender.sent[0]["key"] == f"outbox-{only_message(uow).id}"  # Resend's Idempotency-Key
     assert only_message(uow).status == OutboxStatus.SENT
+    assert only_message(uow).correlation_id == f"outbox-{only_message(uow).id}"
+
+
+def test_worker_and_sender_keep_the_stored_id_through_retries(uow, clock, json_logs):
+    reservation_id = confirmed_hold(uow, correlation_id="confirmation-trace")
+    sender = ResendEmailSender(api_key=None, from_address="test@example.com", fake_failures=1)
+    with correlation_context("outer"):
+        assert EmailService(uow, sender).send_due_emails() == 0
+        assert correlation_id.get() == "outer"
+        assert only_message(uow).correlation_id == "confirmation-trace"
+        clock.now += timedelta(seconds=30)
+        assert EmailService(uow, sender).send_due_emails() == 1
+        assert correlation_id.get() == "outer"
+
+    entries = [json.loads(line) for line in json_logs.getvalue().splitlines()]
+    deliveries = [entry for entry in entries if entry["logger"] == "app.services.emails"]
+    transport = [entry for entry in entries if entry["logger"] == "app.core.email"]
+    assert len(deliveries) == 4 and len(transport) == 1
+    assert all(entry["correlationId"] == "confirmation-trace" for entry in deliveries + transport)
+    assert all(entry["reservationId"] == reservation_id for entry in deliveries)
+    assert [entry["attempt"] for entry in deliveries] == [1, 1, 2, 2]
+    assert correlation_id.get() is None
+
+
+def test_unexpected_delivery_failure_logs_the_id_and_clears_context(uow, json_logs):
+    confirmed_hold(uow, correlation_id="crashed-delivery")
+
+    class BrokenSender:
+        def send(self, *args, **kwargs):
+            raise RuntimeError("unexpected sender failure")
+
+    with pytest.raises(RuntimeError, match="unexpected sender failure"):
+        EmailService(uow, BrokenSender()).send_due_emails()
+    assert correlation_id.get() is None
+    entries = [json.loads(line) for line in json_logs.getvalue().splitlines()]
+    failure = next(entry for entry in entries if entry["message"] == "email delivery failed")
+    assert failure["correlationId"] == "crashed-delivery"
+    assert "RuntimeError" in failure["exception"]
 
 
 def test_fails_twice_then_sent(uow, clock):
@@ -230,23 +271,32 @@ def test_fake_failures_switch_fails_the_first_n_sends():
 
 # --- On the real database -----------------------------------------------------------------------
 
-def test_confirm_on_the_database_writes_the_outbox_row(client, db_session, bearer):
+@pytest.mark.parametrize("supplied_id", [None, "booking-db-trace"])
+def test_confirm_on_the_database_writes_the_outbox_row(client, db_session, bearer, supplied_id):
     user, slot = make_user(db_session), make_slot(db_session)
     hold = make_reservation(db_session, user, slot)
     db_session.commit()
 
-    assert client.post(f"/holds/hold_{hold.id}/confirm", headers=bearer(user.id)).status_code == 200
+    headers = bearer(user.id)
+    if supplied_id is not None:
+        headers["X-Correlation-ID"] = supplied_id
+    response = client.post(f"/holds/hold_{hold.id}/confirm", headers=headers)
+    assert response.status_code == 200
 
     [row] = db_session.scalars(select(NotificationOutboxRow)).all()
     assert row.reservation_id == hold.id and row.status == OutboxStatus.PENDING
     assert row.payload["laundromatName"] == "Spin City" and row.payload["timezone"] == "America/Toronto"
+    assert row.correlation_id == response.headers["X-Correlation-ID"]
+    if supplied_id is not None:
+        assert row.correlation_id == supplied_id
 
 
-def test_the_worker_sends_and_records_on_the_database(client, db_session, bearer, uow_factory):
+def test_the_worker_sends_and_records_on_the_database(client, db_session, bearer, uow_factory, json_logs):
     user, slot = make_user(db_session), make_slot(db_session)
     hold = make_reservation(db_session, user, slot)
     db_session.commit()
-    client.post(f"/holds/hold_{hold.id}/confirm", headers=bearer(user.id))
+    headers = {**bearer(user.id), "X-Correlation-ID": "db-worker-trace"}
+    client.post(f"/holds/hold_{hold.id}/confirm", headers=headers)
 
     sender = FakeSender(fail_with=[down()])
     EmailService(uow_factory, sender).send_due_emails()  # fails once, waits 30 s
@@ -255,6 +305,14 @@ def test_the_worker_sends_and_records_on_the_database(client, db_session, bearer
     row = db_session.scalars(select(NotificationOutboxRow)).one()
     assert row.status == OutboxStatus.PENDING and row.attempts == 1 and "503" in row.last_error
     assert EmailService(uow_factory, sender).send_due_emails() == 0  # not due yet
+    assert row.correlation_id == "db-worker-trace"
+    entries = [json.loads(line) for line in json_logs.getvalue().splitlines()]
+    api_log = next(entry for entry in entries if entry["message"] == "request completed")
+    worker_logs = [entry for entry in entries if entry["logger"] == "app.services.emails"]
+    assert worker_logs
+    assert api_log["correlationId"] == "db-worker-trace"
+    assert all(entry["correlationId"] == api_log["correlationId"] for entry in worker_logs)
+    assert all(entry["reservationId"] == hold.id for entry in worker_logs)
 
 
 def test_two_workers_never_claim_the_same_message(db_session, uow_factory):

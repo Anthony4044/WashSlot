@@ -41,7 +41,7 @@ class OutboxMessage:
     status: OutboxStatus = OutboxStatus.PENDING
     attempts: int = 0  # how many sends were tried
     last_error: str | None = None
-    correlation_id: str | None = None  # filled in by US-8.2 (tracing)
+    correlation_id: str | None = None  # the confirmation request, kept through retries (US-8.2)
     sent_at: datetime | None = None
     created_at: datetime | None = None
 
@@ -81,7 +81,7 @@ class OutboxMessage:
 
 
 def confirmation_email(reservation: Reservation, details: SlotDetails, laundromat_address: str,
-                       timezone: str, now: datetime) -> OutboxMessage:
+                       timezone: str, now: datetime, correlation_id: str | None = None) -> OutboxMessage:
     """The message written when a hold is confirmed: who to email, and where and when the booking is."""
     return OutboxMessage(
         id=None,
@@ -89,6 +89,7 @@ def confirmation_email(reservation: Reservation, details: SlotDetails, laundroma
         laundromat_id=details.laundromat_id,
         type=CONFIRMATION_EMAIL,
         next_attempt_at=now,  # send as soon as possible
+        correlation_id=correlation_id,
         payload={
             "to": reservation.confirmation_email,
             "laundromatName": details.laundromat_name,

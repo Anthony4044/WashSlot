@@ -49,6 +49,15 @@ curl -i -H "X-Correlation-ID: booking-demo" http://localhost:8000/health/live
 
 On Windows PowerShell, use `curl.exe`.
 
+When a hold is confirmed, its request ID is saved with the confirmation email in
+the outbox. The worker uses that ID for sending, failures, and subsequent retries.
+Worker JSON logs include `outboxId`, `reservationId`, and the attempt number.
+Existing outbox rows with no ID receive a stable `outbox-<id>` when claimed.
+
+To trace a booking, send `X-Correlation-ID: booking-demo` with its
+`POST /holds/{holdId}/confirm` request, then inspect `docker compose logs api worker`.
+Find `"correlationId": "booking-demo"` in the API request log and worker delivery logs.
+
 ## Test
 
 ```bash

@@ -1,6 +1,5 @@
 """Request IDs must survive errors and stay isolated across concurrent requests."""
 import asyncio
-import io
 import json
 import logging
 from uuid import UUID
@@ -9,20 +8,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.logging import JsonFormatter, correlation_id
+from app.core.logging import correlation_id
 from app.main import create_app
-
-
-@pytest.fixture
-def json_logs(caplog):
-    caplog.set_level(logging.INFO)
-    stream = io.StringIO()
-    handler = logging.StreamHandler(stream)
-    handler.setFormatter(JsonFormatter())
-    logging.getLogger().addHandler(handler)
-    yield stream
-    logging.getLogger().removeHandler(handler)
-    handler.close()
 
 
 def test_header_and_json_logs_share_the_supplied_id(json_logs):

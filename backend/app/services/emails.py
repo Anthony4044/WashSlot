@@ -15,7 +15,9 @@ from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from app.core.email import EmailSendError
+from app.core.logging import correlation_context
 from app.domain.enums import OutboxStatus
+from app.domain.notification import OutboxMessage
 from app.services.unit_of_work import UnitOfWorkFactory
 
 log = logging.getLogger(__name__)
@@ -39,32 +41,54 @@ class EmailService:
             # 1. Claim the next due message.
             with self.uow_factory() as uow:
                 message = uow.outbox.claim_next()
+                if message is not None and message.correlation_id is None:
+                    # Older rows and messages created outside HTTP still get a stable trace.
+                    message.correlation_id = f"outbox-{message.id}"
+                    uow.outbox.save(message)
             if message is None:
                 break  # nothing more is due
 
-            # 2. Send it, with no transaction open.
-            subject, text = confirmation_text(message.payload)
-            try:
-                self.sender.send(message.payload["to"], subject, text, idempotency_key=f"outbox-{message.id}")
-                error = None
-            except EmailSendError as failed:
-                error = failed
-
-            # 3. Record what happened, using the database clock.
-            with self.uow_factory() as uow:
-                now = uow.slots.now()
-                if error is None:
-                    message.mark_sent(now)
-                    sent += 1
-                else:
-                    message.mark_failed_try(str(error), error.retryable, now)
-                    if message.status == OutboxStatus.FAILED:
-                        log.warning("email %s FAILED after %d tries: %s", message.id, message.attempts, error)
-                    else:
-                        log.warning("email %s try %d failed (%s); next try at %s",
-                                    message.id, message.attempts, error, message.next_attempt_at)
-                uow.outbox.save(message)
+            with correlation_context(message.correlation_id):
+                try:
+                    sent += self._send_message(message)
+                except Exception:
+                    log.exception("email delivery failed", extra={
+                        "outboxId": message.id, "reservationId": message.reservation_id,
+                    })
+                    raise
         return sent
+
+    def _send_message(self, message: OutboxMessage) -> int:
+        details = {
+            "outboxId": message.id, "reservationId": message.reservation_id, "attempt": message.attempts + 1,
+        }
+        log.info("sending confirmation email", extra=details)
+        # 2. Send it, with no transaction open.
+        subject, text = confirmation_text(message.payload)
+        try:
+            self.sender.send(message.payload["to"], subject, text, idempotency_key=f"outbox-{message.id}")
+            error = None
+        except EmailSendError as failed:
+            error = failed
+
+        # 3. Record what happened, using the database clock.
+        with self.uow_factory() as uow:
+            now = uow.slots.now()
+            if error is None:
+                message.mark_sent(now)
+            else:
+                message.mark_failed_try(str(error), error.retryable, now)
+            uow.outbox.save(message)
+        # Report the result only after its transaction commits.
+        if error is None:
+            log.info("confirmation email sent", extra=details)
+            return 1
+        if message.status == OutboxStatus.FAILED:
+            log.warning("email %s FAILED after %d tries: %s", message.id, message.attempts, error, extra=details)
+        else:
+            log.warning("email %s try %d failed (%s); next try at %s",
+                        message.id, message.attempts, error, message.next_attempt_at, extra=details)
+        return 0
 
 
 def confirmation_text(payload: dict) -> tuple[str, str]:

@@ -19,6 +19,7 @@ import time
 
 from app.core.config import get_settings
 from app.core.email import get_email_sender
+from app.core.logging import configure_logging
 from app.data.database import get_session_factory
 from app.data.unit_of_work import SqlAlchemyUnitOfWork
 from app.services.emails import EmailService
@@ -87,7 +88,7 @@ def run_due_jobs(uow_factory: UnitOfWorkFactory, next_run: dict[str, float], now
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    configure_logging()
     session_factory = get_session_factory()  # DATABASE_URL from backend/.env
 
     def uow_factory() -> SqlAlchemyUnitOfWork:

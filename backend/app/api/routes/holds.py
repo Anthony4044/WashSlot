@@ -5,7 +5,7 @@ No rule lives here: "one active reservation per slot" is in the domain, the lock
 """
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.api.deps import get_uow_factory
 from app.api.idempotency import IdempotencyKey
@@ -72,6 +72,8 @@ def get_hold(hold_id: str, user: Reader, service: Service):
     responses={**AUTH_ERRORS, 409: {"model": ErrorResponse}},
     summary="Confirm my hold before it expires",
 )
-def confirm_hold(hold_id: str, user: Writer, service: Service):
+def confirm_hold(hold_id: str, user: Writer, service: Service, request: Request):
     """Naturally idempotent: confirming again returns the same reservation. 409 hold_expired / already_cancelled."""
-    return to_response(service.confirm(user.id, parse_id(HOLD, hold_id)))
+    return to_response(service.confirm(
+        user.id, parse_id(HOLD, hold_id), correlation_id=request.state.correlation_id,
+    ))
