@@ -17,7 +17,7 @@ CONTRACT_PATH = Path(__file__).resolve().parents[3] / "contract" / "openapi.yaml
 CONTRACT = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
 ERROR_CODES = {e["code"] for e in CONTRACT["x-error-catalog"]}
 # Headers WE define (not HTTP's own): a response may carry one only where the contract documents it.
-OUR_HEADERS = ("Idempotency-Replayed",)
+OUR_HEADERS = ("Idempotency-Replayed", "X-Correlation-ID")
 
 
 def _resolve(node: dict) -> dict:

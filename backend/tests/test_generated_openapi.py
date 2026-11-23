@@ -68,3 +68,15 @@ def test_same_status_codes_and_bodies():
     generated, contract = operations(GENERATED), operations(CONTRACT)
     for name in contract:
         assert generated.get(name) == contract[name], name
+
+
+def test_every_response_documents_the_correlation_header():
+    for document in (CONTRACT, GENERATED):
+        for item in document["paths"].values():
+            for method in METHODS:
+                if method in item:
+                    for response in item[method]["responses"].values():
+                        resolved = resolve(document, response)
+                        header = resolve(document, resolved["headers"]["X-Correlation-ID"])
+                        assert header["required"] is True
+                        assert header["schema"]["maxLength"] == 64

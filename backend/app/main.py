@@ -1,9 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.correlation import CorrelationMiddleware
 from app.api.errors import register_error_handlers
 from app.api.routes import auth, browse, health, holds, operator, reservations
 from app.core.config import get_settings
+from app.core.logging import configure_logging
 
 
 def create_app() -> FastAPI:
@@ -25,6 +27,7 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Correlation-ID"],
         expose_headers=["Idempotency-Replayed", "X-Correlation-ID"],
     )
+    app.add_middleware(CorrelationMiddleware)
     register_error_handlers(app)
 
     # Routers: add one line per area, e.g.
@@ -51,7 +54,14 @@ def without_fastapi_422s(schema: dict) -> dict:
         for op in item.values():
             if "HTTPValidationError" in str(op["responses"].get("422")):
                 del op["responses"]["422"]
+            for response in op["responses"].values():
+                response.setdefault("headers", {})["X-Correlation-ID"] = {
+                    "description": "The caller's accepted X-Correlation-ID, or a generated UUID.",
+                    "required": True,
+                    "schema": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[!-~]+$"},
+                }
     return schema
 
 
+configure_logging()
 app = create_app()

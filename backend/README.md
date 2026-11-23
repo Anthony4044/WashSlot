@@ -36,6 +36,19 @@ Demo accounts (`scripts/seed_users.py`, the only way to create an operator):
 | `bob@example.com` | `customer123` | CUSTOMER |
 | `operator@example.com` | `operator123` | OPERATOR |
 
+## Request tracing
+
+The API writes JSON logs with a `correlationId` field. Each response includes
+`X-Correlation-ID`. Supply 1 to 64 visible ASCII characters to choose the ID,
+or let the API generate a UUID. Request logs include the method, path, status,
+and elapsed milliseconds.
+
+```sh
+curl -i -H "X-Correlation-ID: booking-demo" http://localhost:8000/health/live
+```
+
+On Windows PowerShell, use `curl.exe`.
+
 ## Test
 
 ```bash

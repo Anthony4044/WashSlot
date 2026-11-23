@@ -31,6 +31,11 @@ info:
     window. Every published version's conformance suite keeps running in CI.
 
 
+    Tracing: every response includes X-Correlation-ID. Send a value of 1 to 64 visible ASCII
+    characters to reuse it across requests. An absent, empty or invalid value is replaced with a
+    generated UUID. The API logs this value with the request.
+
+
     Changes: v1.1 adds the optional notificationPreference to HoldRequest. v1.0 is frozen in
     contract/v1.0/openapi.yaml.
 
@@ -64,6 +69,9 @@ paths:
       security: []
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The API process can serve requests.
           content:
             application/json:
@@ -81,12 +89,18 @@ paths:
       security: []
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: PostgreSQL answered a probe query.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
         "503":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: service_unavailable. PostgreSQL is not configured or could not answer the probe query.
           content:
             application/json:
@@ -114,12 +128,18 @@ paths:
               $ref: "#/components/schemas/RegisterRequest"
       responses:
         "201":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The account was created. Log in to get a token.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
         "409":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: email_taken. An account with this email (in any letter case) already exists. Not retryable.
           content:
             application/json:
@@ -148,12 +168,18 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The access token.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Token"
         "401":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: >
             invalid_credentials. The email or the password is wrong; the response never says which.
             Not retryable.
@@ -177,6 +203,9 @@ paths:
       security: []
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The laundromats.
           content:
             application/json:
@@ -210,6 +239,9 @@ paths:
             pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The reservable machines and their slots on that day.
           content:
             application/json:
@@ -259,6 +291,8 @@ paths:
         "201":
           description: The slot is held for the caller until expiresAt.
           headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
             Idempotency-Replayed:
               $ref: "#/components/headers/IdempotencyReplayed"
           content:
@@ -273,6 +307,8 @@ paths:
           description: >
             not_found. No slot has this id, or the id is malformed. Not retryable.
           headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
             Idempotency-Replayed:
               $ref: "#/components/headers/IdempotencyReplayed"
           content:
@@ -284,6 +320,8 @@ paths:
             slot_unavailable. Someone else holds or has reserved this slot. Not retryable: pick
             another slot.
           headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
             Idempotency-Replayed:
               $ref: "#/components/headers/IdempotencyReplayed"
           content:
@@ -291,6 +329,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "422":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: >
             invalid_request (bad body), idempotency_key_required (header missing or not 8 to 128
             characters), or idempotency_key_reuse (the same key with a different slot or body: a
@@ -317,6 +358,9 @@ paths:
         - $ref: "#/components/parameters/HoldIdPath"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The hold.
           content:
             application/json:
@@ -347,6 +391,9 @@ paths:
         - $ref: "#/components/parameters/HoldIdPath"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The confirmed reservation (the same one on every repeat).
           content:
             application/json:
@@ -359,6 +406,9 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: >
             hold_expired (the 10 minutes ran out; hold the slot again if it is still free) or
             already_cancelled (the reservation was cancelled). Not retryable.
@@ -381,6 +431,9 @@ paths:
         - bearerAuth: ["reservations:read"]
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The caller's reservations.
           content:
             application/json:
@@ -414,6 +467,9 @@ paths:
         - $ref: "#/components/parameters/ReservationIdPath"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The reservation.
           content:
             application/json:
@@ -441,6 +497,9 @@ paths:
         - $ref: "#/components/parameters/ReservationIdPath"
       responses:
         "204":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The reservation is cancelled (now, or by an earlier call).
         "401":
           $ref: "#/components/responses/Unauthorized"
@@ -449,6 +508,9 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: too_late_to_cancel. The slot has already started. Not retryable.
           content:
             application/json:
@@ -475,6 +537,9 @@ paths:
         - $ref: "#/components/parameters/ReservationIdPath"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The reservation, with checkedInAt set.
           content:
             application/json:
@@ -487,6 +552,9 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: >
             already_cancelled for a cancelled booking, reservation_not_confirmed for a held or
             expired reservation, or too_late_to_check_in when the grace period has ended or the
@@ -510,6 +578,9 @@ paths:
         - bearerAuth: ["operator:manage"]
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The caller's laundromats.
           content:
             application/json:
@@ -543,6 +614,9 @@ paths:
         - $ref: "#/components/parameters/LaundromatIdPath"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The laundromat's machines.
           content:
             application/json:
@@ -588,6 +662,9 @@ paths:
               $ref: "#/components/schemas/MachineUpdate"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The machine as it is now.
           content:
             application/json:
@@ -629,6 +706,9 @@ paths:
               $ref: "#/components/schemas/CreateSlotsRequest"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: How many slots were created and how many were skipped.
           content:
             application/json:
@@ -641,6 +721,9 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "422":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: >
             invalid_request. The body is malformed, toDate is before fromDate, the range is longer
             than 31 days, closeTime is not after openTime, or not even one slot fits between them.
@@ -667,6 +750,9 @@ paths:
         - $ref: "#/components/parameters/LaundromatIdPath"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: Today's bookings and arrival times.
           content:
             application/json:
@@ -701,6 +787,9 @@ paths:
             $ref: "#/components/schemas/NotificationStatus"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The emails, newest first.
           content:
             application/json:
@@ -739,6 +828,9 @@ paths:
         - $ref: "#/components/parameters/NotificationIdPath"
       responses:
         "200":
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
           description: The email as it is now (PENDING after a retry).
           content:
             application/json:
@@ -817,6 +909,14 @@ components:
         maxLength: 128
 
   headers:
+    CorrelationId:
+      description: The caller's accepted X-Correlation-ID, or a generated UUID.
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: '^[!-~]+$'
     IdempotencyReplayed:
       description: >
         "true" when this response is the stored outcome of an earlier request with the same key. A
@@ -827,12 +927,18 @@ components:
 
   responses:
     InvalidRequest:
+      headers:
+        X-Correlation-ID:
+          $ref: "#/components/headers/CorrelationId"
       description: invalid_request. The body, a parameter or the query string is malformed. Not retryable.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     Unauthorized:
+      headers:
+        X-Correlation-ID:
+          $ref: "#/components/headers/CorrelationId"
       description: >
         missing_token (no Authorization header) or invalid_token (bad signature, expired, wrong
         issuer or audience). Get a new token from POST /auth/login. Not retryable as is.
@@ -841,12 +947,18 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Forbidden:
+      headers:
+        X-Correlation-ID:
+          $ref: "#/components/headers/CorrelationId"
       description: insufficient_scope. The token is valid but lacks the scope this operation needs. Not retryable.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     NotFound:
+      headers:
+        X-Correlation-ID:
+          $ref: "#/components/headers/CorrelationId"
       description: >
         not_found. Nothing with this id exists, the id is malformed, or it belongs to someone else.
         Not retryable.
@@ -855,6 +967,9 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     ServerError:
+      headers:
+        X-Correlation-ID:
+          $ref: "#/components/headers/CorrelationId"
       description: >
         internal_error (500) or service_unavailable (503). Our fault: the same request may succeed
         later. Retry with backoff (and with the same Idempotency-Key where the operation takes one).
