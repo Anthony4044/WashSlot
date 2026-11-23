@@ -387,13 +387,37 @@ class SqlOutboxRepository:
         now = self.session.execute(select(func.now())).scalar_one()  # the database clock
         row.next_attempt_at = now + CLAIM_LEASE
         self.session.flush()
-        return OutboxMessage(id=row.id, created_at=row.created_at, **{f: getattr(row, f) for f in _OUTBOX_FIELDS})
+        return _message(row)
 
     def save(self, message: OutboxMessage) -> None:
         row = self.session.get(NotificationOutboxRow, message.id)
         for f in _OUTBOX_FIELDS:
             setattr(row, f, getattr(message, f))
         self.session.flush()
+
+    def get(self, message_id: int, *, lock: bool = False) -> OutboxMessage | None:
+        """One message. lock=True adds FOR UPDATE: a second retry of the same email waits for the
+        first to commit, then reads PENDING and changes nothing (US-7.3)."""
+        query = select(NotificationOutboxRow).where(NotificationOutboxRow.id == message_id)
+        if lock:
+            query = query.with_for_update()
+        row = self.session.execute(query).scalar_one_or_none()
+        return None if row is None else _message(row)
+
+    def list_for_laundromats(self, laundromat_ids: list[int], status: OutboxStatus | None,
+                             limit: int) -> list[OutboxMessage]:
+        """The operator's view (US-7.3): these laundromats' messages, newest first, at most `limit`."""
+        if not laundromat_ids:
+            return []
+        query = select(NotificationOutboxRow).where(NotificationOutboxRow.laundromat_id.in_(laundromat_ids))
+        if status is not None:
+            query = query.where(NotificationOutboxRow.status == status)
+        query = query.order_by(NotificationOutboxRow.created_at.desc(), NotificationOutboxRow.id.desc()).limit(limit)
+        return [_message(row) for row in self.session.scalars(query)]
+
+
+def _message(row: NotificationOutboxRow) -> OutboxMessage:
+    return OutboxMessage(id=row.id, created_at=row.created_at, **{f: getattr(row, f) for f in _OUTBOX_FIELDS})
 
 
 _IDEMPOTENCY_FIELDS = ("user_id", "key", "endpoint", "request_hash", "error_code", "response_body")

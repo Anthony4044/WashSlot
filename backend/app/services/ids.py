@@ -13,6 +13,7 @@ SLOT = "slot"
 HOLD = "hold"
 RESERVATION = "res"
 USER = "usr"
+NOTIFICATION = "ntf"
 
 _PATTERN = re.compile(r"^([a-z]+)_([1-9][0-9]{0,18})$")
 

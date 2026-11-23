@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.domain.availability import SlotAvailabilityRow
+from app.domain.enums import OutboxStatus
 from app.domain.idempotency import IdempotencyRecord
 from app.domain.laundromat import Laundromat, TodayBooking
 from app.domain.machine import Machine
@@ -91,6 +92,15 @@ class OutboxRepository(Protocol):
 
     def save(self, message: OutboxMessage) -> None:
         """Write back status, attempts, next_attempt_at, last_error and sent_at."""
+        ...
+
+    def get(self, message_id: int, *, lock: bool = False) -> OutboxMessage | None:
+        """One message by id. lock=True: SELECT ... FOR UPDATE, so two retries can't both change it (US-7.3)."""
+        ...
+
+    def list_for_laundromats(self, laundromat_ids: list[int], status: OutboxStatus | None,
+                             limit: int) -> list[OutboxMessage]:
+        """Operator view (US-7.3): the messages of these laundromats, newest first; status None means any."""
         ...
 
 

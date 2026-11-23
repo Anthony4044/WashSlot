@@ -2,12 +2,13 @@
 from datetime import date, datetime
 from typing import Literal
 
-from app.domain.enums import MachineType, ReservationStatus
+from app.domain.enums import MachineType, OutboxStatus, ReservationStatus
 from app.domain.laundromat import Laundromat
 from app.domain.machine import Machine
+from app.domain.notification import OutboxMessage
 from app.domain.slot import Reservation, SlotDetails
 from app.services.dto import Dto
-from app.services.ids import HOLD, LAUNDROMAT, MACHINE, RESERVATION, SLOT, format_id
+from app.services.ids import HOLD, LAUNDROMAT, MACHINE, NOTIFICATION, RESERVATION, SLOT, format_id
 
 
 class LaundromatDto(Dto):
@@ -105,6 +106,28 @@ class SlotsCreatedDto(Dto):
     skipped: int  # already existed, or already started
 
 
+class NotificationDto(Dto):
+    notification_id: str
+    reservation_id: str
+    laundromat_id: str
+    laundromat_name: str
+    timezone: str
+    recipient: str
+    machine_label: str
+    start_time: datetime
+    end_time: datetime
+    status: OutboxStatus
+    attempts: int
+    last_error: str | None
+    next_attempt_at: datetime | None  # only while PENDING
+    sent_at: datetime | None
+    created_at: datetime
+
+
+class NotificationListDto(Dto):
+    notifications: list[NotificationDto]
+
+
 def _where_and_when(details: SlotDetails) -> dict:
     return {
         "slot_id": format_id(SLOT, details.slot_id),
@@ -136,3 +159,24 @@ def laundromat_dto(lm: Laundromat) -> LaundromatDto:
 
 def machine_dto(m: Machine) -> MachineDto:
     return MachineDto(machine_id=format_id(MACHINE, m.id), label=m.label, type=m.type, reservable=m.reservable)
+
+
+def notification_dto(m: OutboxMessage, lm: Laundromat) -> NotificationDto:
+    """Who and what the email is about comes from its payload: exactly what the customer gets."""
+    return NotificationDto(
+        notification_id=format_id(NOTIFICATION, m.id),
+        reservation_id=format_id(RESERVATION, m.reservation_id),
+        laundromat_id=format_id(LAUNDROMAT, lm.id),
+        laundromat_name=lm.name,
+        timezone=lm.timezone,
+        recipient=m.payload["to"],
+        machine_label=m.payload["machineLabel"],
+        start_time=datetime.fromisoformat(m.payload["startTime"]),
+        end_time=datetime.fromisoformat(m.payload["endTime"]),
+        status=m.status,
+        attempts=m.attempts,
+        last_error=m.last_error,
+        next_attempt_at=m.next_attempt_at if m.status == OutboxStatus.PENDING else None,
+        sent_at=m.sent_at,
+        created_at=m.created_at,
+    )

@@ -1,17 +1,20 @@
-"""Operator use cases (US-7.1 and US-7.2), in the SERVICE layer:
+"""Operator use cases (US-7.1, US-7.2 and US-7.3), in the SERVICE layer:
 - my laundromats          GET   /operator/laundromats
 - their machines          GET   /operator/laundromats/{id}/machines
 - reservable on/off       PATCH /operator/laundromats/{id}/machines/{machineId}
 - create slots            POST  /operator/laundromats/{id}/slots
-- today's bookings       GET   /operator/laundromats/{id}/today
+- today's bookings        GET   /operator/laundromats/{id}/today
+- my emails               GET   /operator/notifications?status=FAILED
+- send one again          POST  /operator/notifications/{id}/retry
 
 Ownership is checked HERE, on every use case: the scope (operator:manage) only says "you are an
-operator", not "of which laundromat". Another operator's laundromat, or a machine that isn't in
-this laundromat, is not_found, exactly like an id that doesn't exist: we never reveal it is there.
+operator", not "of which laundromat". Another operator's laundromat, or a machine or an email that
+isn't in one of mine, is not_found, exactly like an id that doesn't exist: we never reveal it is there.
 """
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from app.domain.enums import OutboxStatus
 from app.domain.errors import DomainError
 from app.domain.laundromat import Laundromat
 from app.domain.schedule import SlotSchedule
@@ -21,12 +24,16 @@ from app.services.unit_of_work import UnitOfWork, UnitOfWorkFactory
 from app.services.views import (
     LaundromatListDto,
     MachineListDto,
+    NotificationListDto,
     SlotsCreatedDto,
     TodayBookingDto,
     TodayBookingsDto,
     laundromat_dto,
     machine_dto,
+    notification_dto,
 )
+
+MAX_NOTIFICATIONS = 100  # the newest ones; the contract says "at most 100"
 
 
 class OperatorService:
@@ -125,6 +132,32 @@ class OperatorService:
             wanted = [(m.id, start, end) for m in chosen for start, end in times if start > now]
             created = uow.slots.create_many(wanted)
         return Outcome.success(SlotsCreatedDto(created=created, skipped=len(chosen) * len(times) - created))
+
+    def list_notifications(self, user_id: int, status: OutboxStatus | None = None) -> Outcome:
+        """The confirmation emails of every laundromat the caller operates, newest first.
+
+        Ownership is the query itself: we only ever ask for the caller's own laundromat ids.
+        """
+        with self.uow_factory() as uow:
+            mine = {lm.id: lm for lm in uow.laundromats.list_for_operator(user_id)}
+            messages = uow.outbox.list_for_laundromats(list(mine), status, MAX_NOTIFICATIONS)
+        return Outcome.success(NotificationListDto(
+            notifications=[notification_dto(m, mine[m.laundromat_id]) for m in messages]))
+
+    def retry_notification(self, user_id: int, notification_id: int) -> Outcome:
+        """Put a FAILED email back in the queue (the domain rule: OutboxMessage.retry). Idempotent.
+
+        Nothing is sent here: the worker sends it within seconds, outside any request, exactly like
+        the first time. The row is locked so two retries at once can't both change it.
+        """
+        with self.uow_factory() as uow:
+            message = uow.outbox.get(notification_id, lock=True)
+            laundromat = None if message is None else _own_laundromat(uow, user_id, message.laundromat_id)
+            if laundromat is None:
+                return Outcome.failure("not_found")  # no such email, or another operator's
+            if message.retry(uow.slots.now()):  # the database clock: due right now
+                uow.outbox.save(message)
+        return Outcome.success(notification_dto(message, laundromat))
 
 
 def _own_laundromat(uow: UnitOfWork, user_id: int, laundromat_id: int) -> Laundromat | None:
